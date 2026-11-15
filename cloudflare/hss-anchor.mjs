@@ -8,7 +8,7 @@ export function rulesProjection(r){
  const names=r.conditions.ref_name;
  need(names&&Object.keys(names).sort().join(',')==='exclude,include','ANCHOR_RULE_REF_FIELDS');
  need(names&&Array.isArray(names.include)&&names.include.length===1&&names.include[0]==='refs/tags/'+PREFIX+'*'&&Array.isArray(names.exclude)&&names.exclude.length===0,'ANCHOR_RULE_SCOPE');
- need(Array.isArray(r.rules),'ANCHOR_RULES');
+ need(Array.isArray(r.rules)&&!r.rules.some(v=>v.type==='creation'),'ANCHOR_RULES_CREATION_MUST_BE_ALLOWED');
  for(const type of ['update','deletion']){const found=r.rules.filter(v=>v.type===type);need(found.length===1&&(!found[0].parameters||Object.keys(found[0].parameters).length===0),'ANCHOR_IMMUTABILITY_RULE');}
  return {target:r.target,enforcement:r.enforcement,bypass_actors:[],conditions:{ref_name:{include:[names.include[0]],exclude:[]}},rules:[{type:'deletion'},{type:'update'}]};
 }

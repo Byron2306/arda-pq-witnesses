@@ -1,12 +1,12 @@
 {
   "schema": "arda.cf.hss.validation_summary.v1",
-  "tests": 177,
+  "tests": 184,
   "test_counts": {
-    "pq_quorum_tests": 126,
+    "pq_quorum_tests": 132,
     "r13_source_python": 8,
     "r13_worker_node": 5,
     "release_review_ledger_node": 16,
-    "cloudflare_hss_node": 22
+    "cloudflare_hss_node": 23
   },
   "suites": [
     {
@@ -69,5 +69,6 @@
   "real_cloudflare_key_enrolled": false,
   "cloudflare_release_vote_endpoint_implemented": false,
   "production_authorized": false,
-  "interlock": "KEEP_CLOSED"
+  "interlock": "KEEP_CLOSED",
+  "anchor_probe_implemented": true
 }

@@ -25,6 +25,7 @@ def main():
         need(r.get('target')=='tag' and r.get('enforcement')=='active' and r.get('bypass_actors')==[],'active_no_bypass_tag_rules_required')
         scope={'ref_name':{'include':['refs/tags/arda-hss-leaf-*'],'exclude':[]}}
         need(r.get('conditions')==scope,'exact_anchor_tag_scope_required')
+        need(type(r.get('rules')) is list and not any(v.get('type')=='creation' for v in r['rules']),'tag_creation_must_be_allowed')
         for kind in ('update','deletion'):
             matches=[v for v in r.get('rules',[]) if type(v) is dict and v.get('type')==kind]
             need(len(matches)==1 and not matches[0].get('parameters'),'tag_update_deletion_protection_required')
