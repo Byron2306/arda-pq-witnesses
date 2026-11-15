@@ -19,3 +19,23 @@ test('wrong credential and arbitrary vote requests do not generate keys',async()
 test('configuration pin mismatch refuses before key generation',async()=>{const s=await setup();s.env.ARDA_CF_CONFIG_SHA256='ff'.repeat(32);assert.equal((await s.service.fetch(request())).status,503);assert.equal(s.generations,0);});
 test('missing public output after an advanced key never generates or signs again',async()=>{const s=await setup();assert.equal((await s.service.fetch(request())).status,200);s.values.delete('registration');assert.equal((await s.service.fetch(request())).status,409);assert.equal(s.generations,1);assert.equal(s.burns,1);});
 test('disposable self-test creates no durable key and performs no anchor mutation',async()=>{const s=await setup();const r=await s.service.fetch(request('run_disposable_hss_self_test',undefined,'/v1/self-test'));assert.equal(r.status,200);const body=await r.json();assert.equal(body.disposable,true);assert.equal(body.production_authorized,false);assert.equal(s.values.has('key'),false);assert.equal(s.burns,0);});
+function statusRequest(token='aa'.repeat(32)){return new Request('https://example/v1/enrollment-status',{headers:{'X-ARDA-Setup-Token':token}});}
+test('authenticated inspection reads only selected public state and never changes keys',async()=>{
+ const s=await setup();const privateState=new Uint8Array(64);privateState.fill(77);privateState[7]=0;
+ s.values.set('key',{schema:'arda.hss.key_state.v1',state:'QUARANTINED',key_sha256:'ab'.repeat(32),privateState,publicKey:new Uint8Array(60)});
+ s.service.anchorFactory=c=>({async inspect(){return {ok:false,http_status:401,reason:'ANCHOR_HTTP_REFUSED'};}});
+ const before=structuredClone([...s.values]);const r=await s.service.fetch(statusRequest());assert.equal(r.status,200);
+ const body=await r.json();assert.equal(body.key.present,true);assert.equal(body.key.state,'QUARANTINED');assert.equal(body.key.next_leaf,0);assert.equal(body.anchor_read_check.http_status,401);
+ assert.equal(body.production_authorized,false);assert.deepEqual([...s.values],before);assert.equal(s.generations,0);assert.equal(s.burns,0);
+ assert.equal(JSON.stringify(body).includes('privateState'),false);assert.equal(JSON.stringify(body).includes('publicKey'),false);
+});
+test('unauthenticated inspection reveals no durable key metadata',async()=>{const s=await setup();const r=await s.service.fetch(statusRequest('bb'.repeat(32)));assert.equal(r.status,401);assert.equal(s.generations,0);});
+test('inspection error responses never return credentials or arbitrary exception text',async()=>{
+ const s=await setup();s.env.ARDA_CF_ANCHOR_TOKEN='PRIVATE_SETUP_TOKEN';s.service.anchorFactory=()=>{throw Error('PRIVATE_SETUP_TOKEN');};
+ const r=await s.service.fetch(statusRequest());assert.equal(r.status,200);assert.equal((await r.text()).includes('PRIVATE_SETUP_TOKEN'),false);
+});
+test('inspection can read expired-ceremony state while enrollment stays refused',async()=>{
+ const s=await setup();s.service.clock=()=>3000;
+ assert.equal((await s.service.fetch(statusRequest())).status,200);
+ assert.equal((await s.service.fetch(request())).status,503);assert.equal(s.generations,0);
+});

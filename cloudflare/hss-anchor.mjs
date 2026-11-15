@@ -17,18 +17,29 @@ export class ProtectedGitHubAnchor {
   need(configuration&&Object.keys(configuration).sort().join(',')==='genesis_commit,repository,rules_sha256,ruleset_id,schema','ANCHOR_CONFIGURATION_FIELDS');
   need(configuration.schema==='arda.hss.anchor.v1'&&configuration.repository===REPOSITORY&&/^[0-9a-f]{40}$/.test(configuration.genesis_commit)&&Number.isSafeInteger(configuration.ruleset_id)&&configuration.ruleset_id>0&&hex64(configuration.rules_sha256),'ANCHOR_CONFIGURATION');
   need(typeof token==='string'&&token.length>0&&token.length<=4096&&/^[\x21-\x7e]+$/.test(token),'ANCHOR_CREDENTIAL');
-  this.configuration=JSON.parse(new TextDecoder().decode(canonical(configuration)));this.token=token;this.fetcher=fetcher;this.clock=clock;
+  this.configuration=JSON.parse(new TextDecoder().decode(canonical(configuration)));this.token=token;this.fetcher=fetcher;this.clock=clock;this.lastHttpStatus=null;
  }
  async request(path,method='GET',body){
   const base='https://api.github.com/repos/'+REPOSITORY;
   const allowed=(method==='GET'&&path==='/rulesets/'+this.configuration.ruleset_id)||(method==='POST'&&['/git/tags','/git/refs'].includes(path));need(allowed,'ANCHOR_ENDPOINT');
   const response=await this.fetcher(base+path,{method,redirect:'error',cache:'no-store',signal:AbortSignal.timeout(15000),
    headers:{Authorization:'Bearer '+this.token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'ARDA-HSS-Leaf-Anchor-v5',...(body?{'Content-Type':'application/json'}:{})},body:body?new TextDecoder().decode(canonical(body)):undefined});
+  this.lastHttpStatus=response.status;
   need(response.status===(method==='GET'?200:201),'ANCHOR_RESPONSE_UNCERTAIN_OR_REF_EXISTS');
   const reader=response.body?.getReader();need(reader,'ANCHOR_RESPONSE_BODY');let total=0,chunks=[];
   try{for(;;){const {done,value}=await reader.read();if(done)break;total+=value.length;need(total<=131072,'ANCHOR_RESPONSE_SIZE');chunks.push(value);}}finally{await reader.cancel().catch(()=>{});}
   const raw=new Uint8Array(total);let offset=0;for(const c of chunks){raw.set(c,offset);offset+=c.length;}
   return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(raw));
+ }
+ async inspect(){
+  this.lastHttpStatus=null;
+  try{
+   const rules=await this.request('/rulesets/'+this.configuration.ruleset_id);
+   need(rules.id===this.configuration.ruleset_id&&await sha(canonical(rulesProjection(rules)))===this.configuration.rules_sha256,'ANCHOR_RULE_PIN');
+   return {ok:true,http_status:this.lastHttpStatus,reason:'ANCHOR_READ_AND_RULE_PIN_VALID'};
+  }catch{
+   return {ok:false,http_status:this.lastHttpStatus,reason:this.lastHttpStatus!==null&&this.lastHttpStatus!==200?'ANCHOR_HTTP_REFUSED':'ANCHOR_READ_OR_RULE_PIN_REFUSED'};
+  }
  }
  async burn(record){
   need(record&&Object.keys(record).sort().join(',')==='attempt_nonce,context_sha256,expires_at,issued_at,key_sha256,kind,leaf,message_sha256','LEAF_BURN_FIELDS');

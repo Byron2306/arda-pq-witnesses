@@ -38,3 +38,10 @@ test('vote expiry is bounded to 120 seconds even though enrollment permits a day
 test('expiry after external burn withholds signing and retains the marker',async()=>{const s=setup();await s.ready();const base=s.anchor.fetcher;s.anchor.fetcher=async(...args)=>{const r=await base(...args);if(args[0].endsWith('/git/refs'))s.now(1100);return r;};const r=await s.signer.sign(request());assert.equal(r.signature_created,false);assert.equal(s.signs,0);assert.equal(s.net.refs.size,1);});
 test('clock rollback after durable update withholds the signature',async()=>{const s=setup();await s.ready();s.storage.sync=async()=>{s.now(999);};const r=await s.signer.sign(request());assert.equal(r.signature_created,false);assert.equal(s.signs,1);assert.equal(s.snapshot().state,'QUARANTINED');});
 test('creation restrictions are rejected before attempting a real leaf burn',()=>{assert.throws(()=>rulesProjection({...rules,rules:[...rules.rules,{type:'creation'}]}));});
+test('anchor inspection uses only GET and reports rule validation without marker writes',async()=>{
+ const s=setup();await s.ready();const result=await s.anchor.inspect();assert.equal(result.ok,true);assert.equal(result.http_status,200);assert.equal(s.net.refs.size,0);assert.deepEqual(s.net.events,['GET']);
+});
+test('anchor inspection reports only a sanitized HTTP refusal',async()=>{
+ const s=setup();await s.ready();s.anchor.fetcher=async()=>Response.json({message:'do not expose private-token'},{status:401});
+ const r=await s.anchor.inspect();assert.equal(r.ok,false);assert.equal(r.http_status,401);assert.equal(JSON.stringify(r).includes('private-token'),false);
+});

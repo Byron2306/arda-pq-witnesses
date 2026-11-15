@@ -10,9 +10,9 @@ export class HssEnrollmentObject extends DurableObject {
 export default {
  async fetch(request,env){
   const path=new URL(request.url).pathname;
-  if(!((request.method==='GET'&&path==='/healthz')||(request.method==='POST'&&['/v1/enroll-cf','/v1/self-test'].includes(path))))return Response.json({error:'ENROLLMENT_ONLY',production_authorized:false},{status:404});
-  // Reject unauthenticated POSTs before instantiating/accessing the durable key object.
-  if(request.method==='POST'){
+  if(!((request.method==='GET'&&['/healthz','/v1/enrollment-status'].includes(path))||(request.method==='POST'&&['/v1/enroll-cf','/v1/self-test'].includes(path))))return Response.json({error:'ENROLLMENT_ONLY',production_authorized:false},{status:404});
+  // Authenticate setup operations and read-only diagnostics before durable object access.
+  if(request.method==='POST'||path==='/v1/enrollment-status'){
    const expected=env.ARDA_CF_SETUP_CLIENT_TOKEN,supplied=request.headers.get('X-ARDA-Setup-Token');let diff=0;
    if(typeof expected!=='string'||!/^[0-9a-f]{64}$/.test(expected)||typeof supplied!=='string'||supplied.length!==64)return new Response('REFUSE',{status:401});
    for(let i=0;i<64;i++)diff|=expected.charCodeAt(i)^supplied.charCodeAt(i);if(diff)return new Response('REFUSE',{status:401});
