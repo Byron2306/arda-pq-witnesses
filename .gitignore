@@ -12,3 +12,8 @@ operator-config/
 *.p12
 *.pfx
 *secrets*.json
+
+node_modules/
+.wrangler/
+
+**/.dev.vars*

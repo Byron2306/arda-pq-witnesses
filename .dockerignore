@@ -17,3 +17,8 @@ operator-config
 **/*.pfx
 !providers/public-r13/verifier-public.pem
 !providers/public-r13/ak-public.pem
+
+**/node_modules
+**/.wrangler
+
+**/.dev.vars*

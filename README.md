@@ -1,4 +1,8 @@
-# ARDA PQ Quorum v4 — provider enrollment candidate
+# ARDA PQ quorum v5 candidate
+
+Adds a real HSS/LMS Wasm primitive, protected external per-leaf burn guard, and explicit enrollment-only Cloudflare Durable Object service. See [Cloudflare custody runbook](docs/CLOUDFLARE_HSS_RUNBOOK.md). Existing GitHub/HF v4 registrations, image binding, and D14 payload are preserved. Cloudflare provider acceptance and a release-vote/R13 adapter remain unfinished. Production stays unauthorized.
+
+## Retained v4 provider enrollment notes
 
 V4 adds explicit provider-local key provisioning and public enrollment proofs. Start with [the enrollment runbook](docs/PROVIDER_ENROLLMENT.md). The existing v3 hosted Space refuses startup until real all-three enrollment is complete; this is expected. No production authority is granted.
 
