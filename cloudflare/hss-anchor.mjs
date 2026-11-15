@@ -22,7 +22,9 @@ export class ProtectedGitHubAnchor {
  async request(path,method='GET',body){
   const base='https://api.github.com/repos/'+REPOSITORY;
   const allowed=(method==='GET'&&path==='/rulesets/'+this.configuration.ruleset_id)||(method==='POST'&&['/git/tags','/git/refs'].includes(path));need(allowed,'ANCHOR_ENDPOINT');
-  const response=await this.fetcher(base+path,{method,redirect:'error',cache:'no-store',signal:AbortSignal.timeout(15000),
+  // Native Workers fetch must be called without this adapter as its receiver.
+  const fetcher=this.fetcher;
+  const response=await fetcher(base+path,{method,redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(15000),
    headers:{Authorization:'Bearer '+this.token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'ARDA-HSS-Leaf-Anchor-v5',...(body?{'Content-Type':'application/json'}:{})},body:body?new TextDecoder().decode(canonical(body)):undefined});
   this.lastHttpStatus=response.status;
   need(response.status===(method==='GET'?200:201),'ANCHOR_RESPONSE_UNCERTAIN_OR_REF_EXISTS');

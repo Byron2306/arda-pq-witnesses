@@ -45,3 +45,13 @@ test('anchor inspection reports only a sanitized HTTP refusal',async()=>{
  const s=setup();await s.ready();s.anchor.fetcher=async()=>Response.json({message:'do not expose private-token'},{status:401});
  const r=await s.anchor.inspect();assert.equal(r.ok,false);assert.equal(r.http_status,401);assert.equal(JSON.stringify(r).includes('private-token'),false);
 });
+test('anchor invokes an injected fetch function without an adapter receiver',async()=>{
+ const s=await setup();let called=false;
+ s.anchor.fetcher=function(){assert.equal(this,undefined);called=true;return Promise.resolve(new Response('{}',{status:401}));};
+ const result=await s.anchor.inspect();assert.equal(called,true);assert.equal(result.http_status,401);
+});
+test('anchor uses manual redirects and rejects them without following',async()=>{
+ const s=await setup();let calls=0;
+ s.anchor.fetcher=async function(url,options){assert.equal(options.redirect,'manual');calls++;return new Response(null,{status:302,headers:{Location:'https://other.example/'}});};
+ const result=await s.anchor.inspect();assert.equal(calls,1);assert.equal(result.ok,false);assert.equal(result.http_status,302);
+});
