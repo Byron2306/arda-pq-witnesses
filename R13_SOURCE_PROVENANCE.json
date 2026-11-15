@@ -1,0 +1,22 @@
+{
+  "schema": "arda.r13.source_review.v1",
+  "source_sha256": {
+    "README.md": "2da69e8977881f457fd644f356ed18aa372f0d5d3775eea9b0753481d022e3c5",
+    "attest_cloud.py": "bab66cd9010ff7ff2ba67622bc8928a1aef5d726ef4892e6f05e7f08e28f4b39",
+    "capture_normal_boot.py": "da9db067127e5cb78fa11245b66dce013bbac040bc54053d8f33fa7cc0d352ad",
+    "deployment-summary.json": "aab3c12483f78578e92c1bdf2d74a200bce7cad1b3b476a0800e8acc7835d88a",
+    "prepare_deploy.py": "f40584dd7c23143a4677019c01bac5c4d79dfaa01018ca3c7ca78ea158a49321",
+    "quote_client.py": "9db527002b824ea402fa1c4ef8e8c9bce881fb98e99433018b8eae68319e37ce",
+    "r13_v2.py": "ba6fc3fb06b1710f6a3e23f49e7f1ca45a83a12f93d95d2a66b96dc878a80f0e",
+    "requirements.txt": "e694c9f1e9be3eab5524d866c26eb518df953b371ea708a174e200f22e623c07",
+    "test_normal_boot.py": "d4f5b4f6855007fec72a578d39a8371584574589c428414126f8aeced2babcaf",
+    "test_prepare.py": "6fdae11a5303d8bd7227bc5b6dac842e705a6c90e77de3d89170f6b35380d333",
+    "test_transport.py": "088fc502ff04443d10bbd87492f384337390df58997b0a7cecbc91a7900c8915",
+    "verifier.mjs": "d1c75f9f1f3b939bcde11bbf63ea6fa7b8fec06234360f299ca56bee6209eb25",
+    "worker.mjs": "ba5f722d7521951d5e47b75080843e87985b17383f566eda566b4b77f954957e",
+    "worker.test.mjs": "db303d2c8abc80c81dcaad4c0c9e8df748f27d807f10c3d183e8e328ded94bb7"
+  },
+  "python_protocol_copy_identical": true,
+  "existing_cloudflare_worker_modified": false,
+  "live_deployment_performed": false
+}

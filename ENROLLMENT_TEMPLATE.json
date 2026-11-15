@@ -1,0 +1,41 @@
+{
+  "schema": "arda.pq.enrollment_draft.v1",
+  "state": "UNENROLLED",
+  "policy": {
+    "schema": "arda.pq.enrollment.v1",
+    "epoch": 1,
+    "issued_at": null,
+    "expires_at": null,
+    "production_authorized": false,
+    "witnesses": [
+      {
+        "witness_id": "arda:github",
+        "provider": "github",
+        "role": "build_witness",
+        "algorithm": "ML-DSA-65",
+        "key_sha256": null,
+        "public_key_b64": null
+      },
+      {
+        "witness_id": "arda:hf",
+        "provider": "hf",
+        "role": "policy_witness",
+        "algorithm": "SLH-DSA-SHA2-192s",
+        "key_sha256": null,
+        "public_key_b64": null
+      },
+      {
+        "witness_id": "arda:cloudflare",
+        "provider": "cloudflare",
+        "role": "release_witness",
+        "algorithm": "HSS-LMS-SHA256-N32-H10-W8",
+        "key_sha256": null,
+        "public_key_b64": null
+      }
+    ]
+  },
+  "blockers": [
+    "OPERATOR_IDENTITY_AND_KEY_ENROLLMENT_REQUIRED",
+    "STATEFUL_SIGNER_REVIEW_REQUIRED"
+  ]
+}

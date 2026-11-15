@@ -1,0 +1,21 @@
+{
+  "schema": "arda.pq.provider_configuration_draft.v1",
+  "state": "UNENROLLED",
+  "configuration": {
+    "schema": "arda.pq.provider_config.v1",
+    "provider": "hf",
+    "policy_file_sha256": null,
+    "stage_request_sha256": "2965b8eae264b3026d8c35c0af980187b3dbb98e1a39835aaf4b166ba3360c3f",
+    "source_manifest_sha256": "2561e3d009d4e45dda04df5d46cafc7738f0b093122acc7f222541034def2739",
+    "image_digest": null,
+    "runtime_identity": {
+      "space_id": null
+    }
+  },
+  "production_authorized": false,
+  "blockers": [
+    "ACTUAL_ALL_THREE_WITNESS_ENROLLMENT_REQUIRED",
+    "IMMUTABLE_IMAGE_REVIEW_REQUIRED",
+    "PROVIDER_IDENTITY_REQUIRED"
+  ]
+}

@@ -1,0 +1,82 @@
+name: ARDA bounded PQ review witness
+on:
+  workflow_dispatch:
+    inputs:
+      request_b64:
+        description: Canonical review proposal and R13 capture, base64 encoded
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: arda-pq-review-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  review:
+    if: ${{ vars.ARDA_PROVIDER_DEPLOYMENT_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    environment: arda-pq-review
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Validate operator pins and decode data
+        env:
+          ARDA_WITNESS_IMAGE: ${{ vars.ARDA_WITNESS_IMAGE }}
+          ARDA_APPROVED_COMMIT_SHA: ${{ vars.ARDA_APPROVED_COMMIT_SHA }}
+          ARDA_REQUEST_B64: ${{ inputs.request_b64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, json, os, pathlib, re
+          image=os.environ['ARDA_WITNESS_IMAGE']
+          assert re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._/:+-]*@sha256:[0-9a-f]{64}',image)
+          assert re.fullmatch('[0-9a-f]{40}',os.environ['ARDA_APPROVED_COMMIT_SHA'])
+          assert os.environ['GITHUB_SHA']==os.environ['ARDA_APPROVED_COMMIT_SHA']
+          encoded=os.environ['ARDA_REQUEST_B64']
+          assert len(encoded)<=65535
+          raw=base64.b64decode(encoded,validate=True)
+          assert len(raw)<=65536
+          data=json.loads(raw)
+          assert json.dumps(data,sort_keys=True,separators=(',',':'),ensure_ascii=True,allow_nan=False).encode()==raw
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])/'arda-pq-request'
+          root.mkdir(mode=0o700)
+          with (root/'request.json').open('xb') as stream:stream.write(raw)
+          PY
+      - name: Run isolated source tests without signing secrets
+        env:
+          ARDA_WITNESS_IMAGE: ${{ vars.ARDA_WITNESS_IMAGE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network=none --cap-drop=ALL --security-opt=no-new-privileges \
+            --user "$(id -u):$(id -g)" --tmpfs /tmp:rw,nosuid,size=1g \
+            --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/workspace" \
+            --workdir /workspace "$ARDA_WITNESS_IMAGE" python3 run_verification.py
+      - name: Sign one approved review with enrolled ML-DSA key
+        env:
+          ARDA_WITNESS_IMAGE: ${{ vars.ARDA_WITNESS_IMAGE }}
+          ARDA_PROVIDER_CONFIG_SHA256: ${{ vars.ARDA_GITHUB_CONFIG_SHA256 }}
+          ARDA_GITHUB_SIGNER_PKCS8_B64: ${{ secrets[vars.ARDA_GITHUB_SIGNER_SECRET_NAME] }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -m 700 "$RUNNER_TEMP/arda-pq-output"
+          export ARDA_IMAGE_DIGEST="${ARDA_WITNESS_IMAGE##*@}"
+          docker run --rm --network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges \
+            --user "$(id -u):$(id -g)" --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            --env ARDA_PROVIDER_CONFIG_SHA256 --env ARDA_GITHUB_SIGNER_PKCS8_B64 --env ARDA_IMAGE_DIGEST \
+            --env GITHUB_ACTIONS --env GITHUB_REPOSITORY --env GITHUB_WORKFLOW_REF --env GITHUB_SHA \
+            --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/workspace,readonly" \
+            --mount "type=bind,src=$RUNNER_TEMP/arda-pq-request,dst=/request,readonly" \
+            --mount "type=bind,src=$RUNNER_TEMP/arda-pq-output,dst=/output" \
+            --workdir /workspace "$ARDA_WITNESS_IMAGE" python3 tools/provider_vote.py \
+              --provider github --request /request/request.json --out /output/github-vote.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: arda-github-pq-review-vote
+          path: ${{ runner.temp }}/arda-pq-output/github-vote.json
+          if-no-files-found: error
+          retention-days: 1

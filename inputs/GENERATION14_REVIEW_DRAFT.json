@@ -1,0 +1,32 @@
+{
+  "blockers": [
+    "WITNESS_ENROLLMENT_REQUIRED",
+    "FRESH_R13_EVIDENCE_REQUIRED",
+    "LIVE_PROVIDER_VOTES_REQUIRED",
+    "REKOR_PROOF_REQUIRED",
+    "STATEFUL_SIGNER_REVIEW_REQUIRED"
+  ],
+  "interlock": "KEEP_CLOSED",
+  "production_authorized": false,
+  "proposal": {
+    "action": "review_staged_release",
+    "artifact_root_sha256": "7b650a0f83f8c702c770bfa50f0795acf3d0b89627ed20d2709f5fdbc17820ca",
+    "boot_id": "b08f1e0e-6397-440f-a0ad-73313b7bf87c",
+    "deployment_sha256": "981cb3dd839e1e04e8406cee6cb27696fb9eb7ae887348b3cc379dd0f74196a5",
+    "epoch": null,
+    "expires_at": 1794702062,
+    "generation": 14,
+    "issued_at": 1794701762,
+    "machine_id_sha256": "c3cf4096d2202a0803df0d6fbae99e030a8165937466a85c8534ef1b9d6be198",
+    "manifest_digest": "sha256:381d6ac72a53bf04de639c7d73e75fb11760c94f922b955b63d5ec3ea54924e0",
+    "manifest_id": "measured-b1acb7ee4b6242e3ba34eccbe8b6275e",
+    "nonce": "0d6805f416dc74e0506c6edec2d691a7fb58625b0374ffb8cd59b7b639f35ba7",
+    "policy_sha256": null,
+    "proposal_id": "775c87b6d48cf8f3fa80a98f7723e254",
+    "r13_evidence_sha256": null,
+    "schema": "arda.pq.proposal.v1",
+    "staging_request_sha256": "2965b8eae264b3026d8c35c0af980187b3dbb98e1a39835aaf4b166ba3360c3f"
+  },
+  "schema": "arda.pq.review_draft.v1",
+  "state": "UNREADY_DRAFT"
+}

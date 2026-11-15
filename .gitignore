@@ -1,0 +1,14 @@
+__pycache__/
+build/
+VERIFICATION_RESULT.json
+.env*
+*.token
+*.key
+*.pkcs8
+*private*.pem
+operator-config/
+*.der
+*.p8
+*.p12
+*.pfx
+*secrets*.json

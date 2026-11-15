@@ -1,0 +1,26 @@
+{
+  "schema": "arda.campaign_d.release_candidate_verification.v1",
+  "passed": true,
+  "results": [
+    {
+      "suite": "integration",
+      "exit_code": 0,
+      "checks": 131,
+      "output": "{\n  \"archive\": \"/tmp/tmpd8jvn9zx/public.tar.gz\",\n  \"pins_found\": 1,\n  \"public_keys_exported\": 0,\n  \"errors\": [],\n  \"interlock\": \"KEEP_CLOSED\"\n}\n----------------------------------------------------------------------\nRan 131 tests in 0.990s\n\nOK\n"
+    },
+    {
+      "suite": "historical_lab",
+      "exit_code": 0,
+      "checks": 138,
+      "output": "admission_lab.py: PASS\nd374t3r_regression.py: PASS\nd374t2_gauntlet.py: PASS\nd374t_gauntlet.py: PASS\nd374s_gauntlet.py: PASS\nd374s3_crash_race_gauntlet.py: PASS\nd374t3rc_concurrency.py: PASS\nd374t4_sigkill.py: PASS\ntest_iron_citadel_deadline.py: PASS\ntest_iron_sender.py: PASS\ntest_sqlite_lifetime.py: PASS\niron_process_lab.py: PASS\nASSERTIONS=138\nPRODUCTION_AUTHORIZED=FALSE\nINTERLOCK=KEEP_CLOSED\n"
+    },
+    {
+      "suite": "signed_runtime_process",
+      "exit_code": 0,
+      "checks": 19,
+      "output": "WORKER_PROCESSES_DISTINCT: PASS\nALPHA_CLAIM: PASS\nDIRECT_OTHER_PROCESS_DISPATCH_REFUSED: PASS\nBETA_OWN_CLAIM: PASS\nTRANSFERRED_SOCKET_DISPATCH_REFUSED: PASS\nORIGINAL_SENDER_DISPATCHES: PASS\nSECOND_ORIGINAL_CLAIM: PASS\nORIGINAL_PROCESS_EXITED: PASS\nTRANSFER_AFTER_OWNER_EXIT_REFUSED: PASS\nREJECTED_DISPATCH_NOT_DURABLE: PASS\nRECONNECTED_WORKER_CLAIM: PASS\nOPEN_CONNECTION_REVOCATION: PASS\nPRE_RESTART_CLAIM: PASS\nACTUAL_SERVER_PROCESS_REPLACED: PASS\nREVOCATION_SURVIVES_PROCESS_RESTART: PASS\nAUTHORIZED_BINDING_SURVIVES_RESTART: PASS\nSYNTHETIC_COMPLETION_REFUSED_AFTER_RESTART: PASS\nNO_FABRICATED_COMPLETION_DURABLE: PASS\nSQLITE_INTEGRITY: PASS\nREPORT=/workspace/scratch/70eea42ac66f/campaign-d-release-candidate/SIGNED_PROCESS_RESULT_13f6385178804c599bcad8a00a651a31.json\nTESTS: 19\nPASS: 19\nPRODUCTION_AUTHORIZED=FALSE\nINTERLOCK=KEEP_CLOSED\n"
+    }
+  ],
+  "production_authorized": false,
+  "interlock": "KEEP_CLOSED"
+}
