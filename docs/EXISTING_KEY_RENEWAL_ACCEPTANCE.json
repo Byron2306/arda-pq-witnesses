@@ -1,0 +1,14 @@
+{
+  "schema": "arda.pq.existing_key_renewal.acceptance.v1",
+  "tests": 234,
+  "passed": true,
+  "native_cf_registration_verified": true,
+  "cf_registration_sha256": "f497b76d2806bec9557bdc5af7605ad318fb560ca70278b583fded710662beae",
+  "ceremony_sha256": "ed506e9d31ce6eff9cbfb3c8ecc1d89308d3d61a7845111d0631a37f71759ec9",
+  "overlay_sha256": "5f3adf4cce0b3a4e7de41c7e414d1cd86212bcdb28c2d7b342e2f704d2ab87e1",
+  "independent_review_findings": [],
+  "live_provider_changes_performed": false,
+  "pinned_container_execution_tested": false,
+  "production_authorized": false,
+  "interlock": "KEEP_CLOSED"
+}

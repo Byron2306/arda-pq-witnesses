@@ -1,13 +1,13 @@
-name: ARDA provider-local key enrollment
+name: ARDA existing-key registration renewal
 on:
   workflow_dispatch:
     inputs:
       ceremony_b64:
-        description: Canonical public ceremony encoded as base64
+        description: Canonical public ceremony, base64 encoded
         required: true
         type: string
       ceremony_sha256:
-        description: Independently reviewed ceremony digest
+        description: Independently reviewed ceremony SHA256
         required: true
         type: string
 permissions:
@@ -16,61 +16,74 @@ concurrency:
   group: arda-pq-key-enrollment
   cancel-in-progress: false
 jobs:
-  enroll:
-    if: ${{ vars.ARDA_ENROLLMENT_ENABLED == 'true' }}
+  renew:
+    if: ${{ vars.ARDA_EXISTING_KEY_RENEWAL_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     environment: arda-pq-enrollment
     timeout-minutes: 10
     steps:
-      - name: Validate immutable setup image, approved workflow commit and ceremony
+      - name: Validate approved source commit and public ceremony
         shell: bash
         env:
-          ARDA_WITNESS_IMAGE: ${{ vars.ARDA_WITNESS_IMAGE }}
-          ARDA_APPROVED_ENROLLMENT_COMMIT: ${{ vars.ARDA_APPROVED_ENROLLMENT_COMMIT }}
+          ARDA_APPROVED_RENEWAL_COMMIT: ${{ vars.ARDA_APPROVED_RENEWAL_COMMIT }}
+          ARDA_APPROVED_RENEWAL_REF: ${{ vars.ARDA_APPROVED_RENEWAL_REF }}
           ARDA_CEREMONY_B64: ${{ inputs.ceremony_b64 }}
           ARDA_CEREMONY_PIN: ${{ inputs.ceremony_sha256 }}
         run: |
           set -euo pipefail
-          python3 - <<'PY'
+          python3 - <<'PYCODE'
           import base64, hashlib, json, os, pathlib, re
-          image=os.environ['ARDA_WITNESS_IMAGE']
-          assert re.fullmatch(r'ghcr.io/byron2306/arda-pq-witness@sha256:[0-9a-f]{64}',image)
-          assert re.fullmatch('[0-9a-f]{40}',os.environ['ARDA_APPROVED_ENROLLMENT_COMMIT'])
-          assert os.environ['GITHUB_SHA']==os.environ['ARDA_APPROVED_ENROLLMENT_COMMIT']
           assert os.environ['GITHUB_REPOSITORY']=='Byron2306/arda-pq-witnesses'
-          assert os.environ['GITHUB_REF']=='refs/heads/main'
+          approved=os.environ['ARDA_APPROVED_RENEWAL_COMMIT']
+          assert re.fullmatch('[0-9a-f]{40}',approved)
+          assert os.environ['GITHUB_SHA']==approved
+          ref=os.environ['ARDA_APPROVED_RENEWAL_REF']
+          assert ref in ('refs/heads/main','refs/heads/candidate/cloudflare-hss-v5-20261115')
+          assert os.environ['GITHUB_REF']==ref
           pin=os.environ['ARDA_CEREMONY_PIN'];assert re.fullmatch('[0-9a-f]{64}',pin)
           encoded=os.environ['ARDA_CEREMONY_B64'];assert len(encoded)<=24000
           raw=base64.b64decode(encoded,validate=True);assert len(raw)<=16384
           assert hashlib.sha256(raw).hexdigest()==pin
           data=json.loads(raw)
           assert json.dumps(data,sort_keys=True,separators=(',',':'),ensure_ascii=True,allow_nan=False).encode()==raw
-          assert data['image_digest']==image.split('@')[1]
-          root=pathlib.Path(os.environ['RUNNER_TEMP'])/'arda-enrollment'
+          assert data['image_digest']=='sha256:02dc4bacda942f58d040cc9093174d2cd6fc84fafc098bf0263a4ff61bda99bd'
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])/'arda-renewal'
           root.mkdir(mode=0o700);(root/'out').mkdir(mode=0o700)
           (root/'ceremony.json').write_bytes(raw)
-          PY
-      - name: Generate and store GitHub key; release public registration only
+          PYCODE
+      - name: Fetch hash-pinned overlay and pull accepted immutable image
         shell: bash
-        env:
-          ARDA_WITNESS_IMAGE: ${{ vars.ARDA_WITNESS_IMAGE }}
-          ARDA_ALLOW_PROVIDER_KEY_PROVISIONING: ${{ inputs.ceremony_sha256 }}
-          ARDA_ENROLLMENT_STORE_TOKEN: ${{ secrets.ARDA_ENROLLMENT_STORE_TOKEN }}
         run: |
           set -euo pipefail
-          export ARDA_IMAGE_DIGEST="${ARDA_WITNESS_IMAGE##*@}"
-          docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges \
-            --user "$(id -u):$(id -g)" --tmpfs /tmp:rw,noexec,nosuid,size=32m \
-            --env ARDA_ALLOW_PROVIDER_KEY_PROVISIONING --env ARDA_ENROLLMENT_STORE_TOKEN --env ARDA_IMAGE_DIGEST \
-            --env GITHUB_ACTIONS --env GITHUB_REPOSITORY \
-            --mount "type=bind,src=$RUNNER_TEMP/arda-enrollment/ceremony.json,dst=/ceremony.json,readonly" \
-            --mount "type=bind,src=$RUNNER_TEMP/arda-enrollment/out,dst=/output" \
-            "$ARDA_WITNESS_IMAGE" python3 tools/enroll_provider.py --provider github \
-              --ceremony /ceremony.json --ceremony-sha256 "$ARDA_ALLOW_PROVIDER_KEY_PROVISIONING" \
-              --out /output/github-registration.json
+          curl --disable --noproxy '*' --proto '=https' --tlsv1.2 --fail --silent --show-error --max-time 60 \
+            "https://raw.githubusercontent.com/Byron2306/arda-pq-witnesses/$GITHUB_SHA/tools/renew_existing.py" \
+            --output "$RUNNER_TEMP/arda-renewal/renew_existing.py"
+          printf '%s  %s\n' '5f3adf4cce0b3a4e7de41c7e414d1cd86212bcdb28c2d7b342e2f704d2ab87e1' "$RUNNER_TEMP/arda-renewal/renew_existing.py" | sha256sum --check
+          docker pull ghcr.io/byron2306/arda-pq-witness@sha256:02dc4bacda942f58d040cc9093174d2cd6fc84fafc098bf0263a4ff61bda99bd
+      - name: Renew registration with existing GitHub key, offline
+        shell: bash
+        env:
+          ARDA_ALLOW_EXISTING_KEY_RENEWAL: ${{ inputs.ceremony_sha256 }}
+          ARDA_IMAGE_DIGEST: sha256:02dc4bacda942f58d040cc9093174d2cd6fc84fafc098bf0263a4ff61bda99bd
+          ARDA_GITHUB_SIGNER_PKCS8_B64_D6AAED60D09F77FD5BDFBC6B67E9831A12696CACE8871330927072822BAFF09F: ${{ secrets.ARDA_GITHUB_SIGNER_PKCS8_B64_D6AAED60D09F77FD5BDFBC6B67E9831A12696CACE8871330927072822BAFF09F }}
+        run: |
+          set -euo pipefail
+          docker run --rm --pull=never --network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges \
+            --user "$(id -u):$(id -g)" --tmpfs /tmp:rw,noexec,nosuid,nodev,size=32m \
+            --env ARDA_ALLOW_EXISTING_KEY_RENEWAL --env ARDA_IMAGE_DIGEST --env GITHUB_ACTIONS --env GITHUB_REPOSITORY \
+            --env ARDA_GITHUB_SIGNER_PKCS8_B64_D6AAED60D09F77FD5BDFBC6B67E9831A12696CACE8871330927072822BAFF09F \
+            --mount "type=bind,src=$RUNNER_TEMP/arda-renewal/renew_existing.py,dst=/app/tools/renew_existing.py,readonly" \
+            --mount "type=bind,src=$RUNNER_TEMP/arda-renewal/ceremony.json,dst=/ceremony.json,readonly" \
+            --mount "type=bind,src=$RUNNER_TEMP/arda-renewal/out,dst=/output" \
+            --entrypoint python3 \
+            ghcr.io/byron2306/arda-pq-witness@sha256:02dc4bacda942f58d040cc9093174d2cd6fc84fafc098bf0263a4ff61bda99bd \
+            tools/renew_existing.py github --ceremony /ceremony.json \
+            --ceremony-sha256 "$ARDA_ALLOW_EXISTING_KEY_RENEWAL" \
+            --expected-key-sha256 d6aaed60d09f77fd5bdfbc6b67e9831a12696cace8871330927072822baff09f \
+            --out /output/github-registration.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: arda-github-public-key-registration
-          path: ${{ runner.temp }}/arda-enrollment/out/github-registration.json
+          name: arda-github-renewed-public-registration
+          path: ${{ runner.temp }}/arda-renewal/out/github-registration.json
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 2
