@@ -89,3 +89,16 @@ class ExistingKeyRenewalTests(unittest.TestCase):
   with self.assertRaises(ValueError):self.m.verify_hf_response(canonical(body),self.c,'11'*32,now=1000)
   wrong=dict(body,registration=self.session('github').trigger())
   with self.assertRaises(ValueError):self.m.verify_hf_response(canonical(wrong),self.c,self.pins['github'],now=1000)
+ def test_startup_refusal_reports_only_a_fixed_diagnostic_stage(self):
+  env=self.env('hf');env.pop(e.secret_name('hf',self.pins['hf']))
+  with self.assertRaises(ValueError) as error:self.session(env=env)
+  self.assertEqual(getattr(error.exception,'stage',None),'EXISTING_NAMED_SECRET')
+  self.assertEqual(str(error.exception),'EXISTING_KEY_RENEWAL_REFUSED')
+ def test_hf_startup_log_identifies_missing_client_token_without_secrets(self):
+  self.c=e.new_ceremony(nonce='ab'*32,image_digest='sha256:'+'cd'*32,identities=self.c['identities'],now=int(time.time()))
+  env=dict(os.environ,**self.env('hf'),ARDA_RENEWAL_CEREMONY_JSON=canonical(self.c).decode(),ARDA_RENEWAL_EXPECTED_KEY_SHA256=self.pins['hf'])
+  env.pop('ARDA_HF_SETUP_CLIENT_TOKEN',None)
+  run=subprocess.run(['python3',str(ROOT/'tools/renew_existing.py'),'hf-server'],env=env,capture_output=True,text=True,timeout=30)
+  self.assertNotEqual(run.returncode,0)
+  self.assertIn('HF_STARTUP_CHECK=HF_CLIENT_TOKEN',run.stderr)
+  self.assertNotIn(env[e.secret_name('hf',self.pins['hf'])],run.stdout+run.stderr)

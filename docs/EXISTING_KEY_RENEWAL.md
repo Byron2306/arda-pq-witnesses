@@ -54,3 +54,7 @@ python3 tools/renew_existing.py hf-client \
 Forward `ARDA_HF_SETUP_CLIENT_TOKEN` by environment name; for a private Space also forward `HF_TOKEN` for gateway access. The fixed HTTPS client refuses redirects and retries, retains the public response before native verification, and writes `hf-registration.json` only after ceremony, signature, provider and existing-key checks pass. It refuses an existing output directory before contacting the Space. If it reports a refusal, inspect the retained output and current deployment before any new action.
 
 After all three public registrations are verified against the same live ceremony, use the existing finalizer to create a closed enrollment policy. Key possession proofs do not independently prove hosted custody, provider votes, R13 freshness, Rekor inclusion or production admission.
+
+## Startup refusal diagnostics
+
+HF startup emits `HF_STARTUP_CHECK=<fixed identifier>` before the generic refusal. The identifier describes the check (ceremony, provider/image binding, exact named signer secret, private-key decoding/backend/fingerprint, setup-client token or server bind). It contains no environment values, credential contents or upstream exception text. A refusal remains closed; use the identifier to investigate the failed check before changing configuration.

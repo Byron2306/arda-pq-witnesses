@@ -58,7 +58,7 @@ jobs:
           curl --disable --noproxy '*' --proto '=https' --tlsv1.2 --fail --silent --show-error --max-time 60 \
             "https://raw.githubusercontent.com/Byron2306/arda-pq-witnesses/$GITHUB_SHA/tools/renew_existing.py" \
             --output "$RUNNER_TEMP/arda-renewal/renew_existing.py"
-          printf '%s  %s\n' '5f3adf4cce0b3a4e7de41c7e414d1cd86212bcdb28c2d7b342e2f704d2ab87e1' "$RUNNER_TEMP/arda-renewal/renew_existing.py" | sha256sum --check
+          printf '%s  %s\n' 'e4710eaa5e5c2df2c1af9e81beb974382a11ee92023c4ea2798083a6b5d08e68' "$RUNNER_TEMP/arda-renewal/renew_existing.py" | sha256sum --check
           docker pull ghcr.io/byron2306/arda-pq-witness@sha256:02dc4bacda942f58d040cc9093174d2cd6fc84fafc098bf0263a4ff61bda99bd
       - name: Renew registration with existing GitHub key, offline
         shell: bash

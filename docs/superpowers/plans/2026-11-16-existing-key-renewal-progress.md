@@ -11,3 +11,7 @@ HF client response verifier RED→GREEN: rejects changed authority, foreign prov
 
 Task 1: complete. Final full run_verification.py →234 PASS; focused renewal tests11 PASS; executable GitHub preflight rejects wrong approved commit before creating files and accepts matching source. No Docker runtime available locally; pinned-image live runtime validation remains a provider step.
 Final review: fresh read-only reviewer found no Critical/Important/Minor issues. Declined live GH/HF settings, gateway access and pinned-image execution: these remain explicitly unverified until operator runs the candidate. No production/live provider changes by this implementation.
+
+Follow-up 2026-11-16: deployed HF commit064a134e reported RUNTIME_ERROR with only the generic refusal. Root cause remains unknown because startup swallowed check identifiers. Added fixed-stage diagnostic instrumentation only, retaining the generic exception string and all checks. Regression tests: missing named signer produces EXISTING_NAMED_SECRET; missing setup-client token emits HF_CLIENT_TOKEN without any private key text. Both tests observed RED then GREEN;13 focused tests pass. This is observability, not a claimed repair of hosted configuration.
+
+Follow-up verification: full run_verification.py →236 PASS. Diagnostic identifiers are locally selected constants; no upstream exception messages or environment values are emitted. Hosted failure remains unresolved until diagnostic output is collected.
