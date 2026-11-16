@@ -1,0 +1,28 @@
+{
+  "schema": "arda.pq.live_enrollment_independent_review.v1",
+  "verified_at_utc": "2026-11-16T12:54:59Z",
+  "archive_sha256": "a097bfd39326758fcf23a1108d3269e3b3ba1c9d16a584c6bb0f031d646afe26",
+  "policy_file_sha256": "30f2dd836a36a85e5c16693b71171825b159d6da852ee595542cf03779bbc976",
+  "ceremony_sha256": "ed506e9d31ce6eff9cbfb3c8ecc1d89308d3d61a7845111d0631a37f71759ec9",
+  "epoch": 1,
+  "native_signature_verification": {
+    "github": "PASS",
+    "hf": "PASS",
+    "cloudflare": "PASS"
+  },
+  "canonical_files": "PASS",
+  "exact_three_provider_coverage": "PASS",
+  "policy_reproduced_byte_for_byte": "PASS",
+  "rotation_receipt_pin_and_replacement_binding": "PASS",
+  "registration_pins": {
+    "github": "6d49fc95337faa0c89aa90ab5877b375345610881255afa147f004681dd2b3cd",
+    "hf": "c5ada708a499997271be4e388b7ef923fb4b11388b27b1b78f5c7d49e5ec5264",
+    "cloudflare": "f497b76d2806bec9557bdc5af7605ad318fb560ca70278b583fded710662beae"
+  },
+  "scope": "Public key registration proofs and closed enrollment candidate; not release approval or production admission.",
+  "live_release_certificate_supplied": false,
+  "rekor_proof_supplied": false,
+  "production_consumer_installed_by_this_review": false,
+  "production_authorized": false,
+  "interlock": "KEEP_CLOSED"
+}
