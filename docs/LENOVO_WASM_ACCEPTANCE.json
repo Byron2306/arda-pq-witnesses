@@ -1,0 +1,26 @@
+{
+  "schema": "arda.cf.lenovo_bundle_verification.v1",
+  "bundle_sha256": "40224b8d74ec827e66c866c5105cb0429db5ad630964e997799709090ec9c457",
+  "wasm_sha256": "8e716fc5bf42ff2ce8259a18bb600a374599f7f8b5a85a37460e5d9b155f0b84",
+  "manifest_verified": true,
+  "bundled_source_matches_reviewed_candidate": true,
+  "noncustom_wasm_sections_identical": true,
+  "differing_custom_debug_sections": [
+    ".debug_info",
+    ".debug_str",
+    ".debug_line"
+  ],
+  "independent_native_signature_verification": true,
+  "disposable_leaves_verified": [
+    0,
+    1
+  ],
+  "lenovo_tests_reported": 184,
+  "cf_config_sha256": "385a0602f4a9f1a7a3ddc04ef15f61c3495e6128cdde6a78e229deb537d25b9f",
+  "anchor_probe_report_sha256_operator_reported": "754abf345f705156f6d9282e2173d9c87c63892f33c79e6b4382983eec6cdfeb",
+  "anchor_probe_ref_retained_and_read_back": true,
+  "cloudflare_deployment_performed": false,
+  "real_hss_key_enrolled": false,
+  "production_authorized": false,
+  "interlock": "KEEP_CLOSED"
+}

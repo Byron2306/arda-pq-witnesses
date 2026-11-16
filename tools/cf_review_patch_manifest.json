@@ -1,0 +1,41 @@
+{
+  "allowed_manifests": [
+    "27969435eba621f4ce9ef64100117d049a80e9662511cf2de003b80384db692b",
+    "74fceeb072c6f2d51a49c594eefc1c92b3343bca210381bc35f66e964b2d7dda"
+  ],
+  "baseline": {
+    "cloudflare/hss-guard.mjs": "e912e0bb78812a89bc9444712a9c985b46f0616b29d17bed5d441a436514f992",
+    "cloudflare/r13-capture.mjs": null,
+    "cloudflare/release-config.mjs": null,
+    "cloudflare/release-service.mjs": null,
+    "cloudflare/review-protocol.mjs": null,
+    "docs/CLOUDFLARE_RELEASE_REVIEW.md": null,
+    "providers/cloudflare/worker.mjs": "ea38aff483ee54a5b2bd37b4f168c824bfa02341dfe549d7b669f52620e59050",
+    "tools/prepare_cf_review.py": null
+  },
+  "files_sha256": {
+    "cloudflare/hss-guard.mjs": "013943810dc89b0d84cd74785b63055f4f974eb068748716a6112417c7a29e43",
+    "cloudflare/r13-capture.mjs": "412fabfa7a0ea25f0894b90a98b8e9dca7101d63e2a7a0ba11bd95f7eec45400",
+    "cloudflare/release-config.mjs": "95f74569f454d55b366370b48ecb27f090a7ffaa77edbb5b414fc721398244dd",
+    "cloudflare/release-service.mjs": "bbae236899012287c43c3469e004084dba757a36c03ffc90a7a05908e22f732f",
+    "cloudflare/review-protocol.mjs": "b72e366930212aaa5396c3b8627225e667f44baccd606e6ffbc3c28f9089f7cf",
+    "docs/CLOUDFLARE_RELEASE_REVIEW.md": "76cfaa7fa49358096ea6eac2d178c241b71ce1ab46ddea80452b2c1cdf69ded1",
+    "providers/cloudflare/worker.mjs": "b121a651f76f5e64b82c47c56ce33f9a89f43c95f486c12a3a7ff44fc528a4cc",
+    "tools/prepare_cf_review.py": "9d6028d611a9dd3017bfdc386d89efff9a7b644318de9a15704efc73c87d0b55"
+  },
+  "immutable": {
+    "build/WASM_BUILD.json": "85040294f1278e82a964f012c92c6e34e3cbaf2866a45d36e61feb08757cf5b4",
+    "build/hss-state-meta.mjs": "dd27be62f934f62749a3e36f612d5eeddbc7e6bc84b66e16a27b7d9585f0264a",
+    "build/hss-state.wasm": "8e716fc5bf42ff2ce8259a18bb600a374599f7f8b5a85a37460e5d9b155f0b84",
+    "cloudflare/hss-anchor.mjs": "b36ecde7329b782365cd4c929d8e52bfc7109d25c5ef0b3c00ea642c4fc087fc",
+    "cloudflare/hss-engine.mjs": "19d30b16d0b341bb910281132590720d16354e5ed86e2e94ae4d6260a90e9b0a",
+    "cloudflare/hss-enrollment.mjs": "13260e94f39f243b96c542a11f3685dcc80dd98aac8f747cb9c44cd01d500f63",
+    "cloudflare/hss-rotation.mjs": "dfeb7e298fc42f76c1020cc785eb40a7ee176be8bd1fa4c9c5fd63b61ea193d4",
+    "providers/cloudflare/package-lock.json": "4ce428e7a968b7c761954f556e9c6189bd071b7c56b126585a59812b3da28d8c",
+    "providers/cloudflare/package.json": "8d8c3499d2c2015eff1ca8c94d7e69c931d34b5c4e766b9d8dfc511df415c555",
+    "providers/cloudflare/wrangler.toml": "e255fc92ddbf340b11c71df1521c8de3e0fca9a8442f9ae391fbb2dab1230a69",
+    "tools/cf_operator.py": "b0ec864ae5f59fd204d1584fd654f74a920128e9220c138360aeacef743b99cd",
+    "tools/export_cf_bundle.py": "58a634639546e4631d598d0f05ac113bc19df091b7d9c54e9f226766f41b0497"
+  },
+  "installer_sha256": "729ecc3d2853aeec1a1ef84cf5678293f20a48a7f1f2065ad4a7b61a015fe3c4"
+}

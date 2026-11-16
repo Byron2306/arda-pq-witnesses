@@ -1,0 +1,74 @@
+{
+  "schema": "arda.cf.hss.validation_summary.v1",
+  "tests": 184,
+  "test_counts": {
+    "pq_quorum_tests": 132,
+    "r13_source_python": 8,
+    "r13_worker_node": 5,
+    "release_review_ledger_node": 16,
+    "cloudflare_hss_node": 23
+  },
+  "suites": [
+    {
+      "suite": "preflight",
+      "exit_code": 0
+    },
+    {
+      "suite": "native_and_upstream_vectors",
+      "exit_code": 0
+    },
+    {
+      "suite": "hss_wasm_build",
+      "exit_code": 0
+    },
+    {
+      "suite": "pq_quorum_tests",
+      "exit_code": 0
+    },
+    {
+      "suite": "r13_source_python",
+      "exit_code": 0
+    },
+    {
+      "suite": "r13_worker_node",
+      "exit_code": 0
+    },
+    {
+      "suite": "release_review_ledger_node",
+      "exit_code": 0
+    },
+    {
+      "suite": "cloudflare_hss_node",
+      "exit_code": 0
+    }
+  ],
+  "wasm_build": {
+    "schema": "arda.hss.wasm_build.v1",
+    "zig_version": "0.14.1",
+    "upstream_tree": "77688282cbfc0070f5355efeae8d2ea2f57b9168",
+    "build_copy_patch": "sha256.h USE_OPENSSL 1 -> 0; vendor source unchanged",
+    "wasm_sha256": "0cea101af674a385c30c233638c5f36ef04343c70a2e4e9a367e35660ea00a19",
+    "wrapper_sha256": "6a0565fd5a6b79cae30678a69e2f9958ab7cb4f3afeaf149d14c4f4eee382278",
+    "production_authorized": false
+  },
+  "wrangler_dry_run_pass": true,
+  "worker_local_acceptance": {
+    "schema": "arda.cf.local_acceptance.v1",
+    "wrangler_version": "4.162.0",
+    "local_workerd_disposable_test_pass": true,
+    "elapsed_seconds": 7.293,
+    "wasm_sha256": "0cea101af674a385c30c233638c5f36ef04343c70a2e4e9a367e35660ea00a19",
+    "live_provider_calls": 0,
+    "real_hss_key_enrolled": false,
+    "production_authorized": false,
+    "interlock": "KEEP_CLOSED"
+  },
+  "public_bundle_allowlist_checked": true,
+  "live_github_anchor_acceptance": false,
+  "live_cloudflare_deployment": false,
+  "real_cloudflare_key_enrolled": false,
+  "cloudflare_release_vote_endpoint_implemented": false,
+  "production_authorized": false,
+  "interlock": "KEEP_CLOSED",
+  "anchor_probe_implemented": true
+}

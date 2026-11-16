@@ -1,0 +1,79 @@
+name: ARDA ready-first PQ review witness
+on:
+  workflow_dispatch:
+    inputs:
+      session:
+        description: Unique 64-character lowercase hex inbox session
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: arda-pq-release-review
+  cancel-in-progress: false
+jobs:
+  review:
+    if: ${{ vars.ARDA_PROVIDER_DEPLOYMENT_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    environment: arda-pq-review
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Validate public configuration and fetch accepted image
+        env:
+          ARDA_WITNESS_IMAGE: ${{ vars.ARDA_WITNESS_IMAGE }}
+          ARDA_APPROVED_COMMIT_SHA: ${{ vars.ARDA_APPROVED_COMMIT_SHA }}
+          ARDA_GITHUB_CONFIG_JSON: ${{ vars.ARDA_GITHUB_CONFIG_JSON }}
+          ARDA_GITHUB_CONFIG_SHA256: ${{ vars.ARDA_GITHUB_CONFIG_SHA256 }}
+          ARDA_ENROLLMENT_JSON: ${{ vars.ARDA_ENROLLMENT_JSON }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/github_review_config.py
+          docker pull "$ARDA_WITNESS_IMAGE"
+          docker run --rm --network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,size=1g \
+            "$ARDA_WITNESS_IMAGE" python3 tools/host_preflight.py
+      - name: Announce readiness
+        env:
+          ARDA_REVIEW_SESSION: ${{ inputs.session }}
+          ARDA_READY_ONLY: 'true'
+        run: python3 tools/github_review_inbox.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: arda-github-review-ready
+          path: ${{ runner.temp }}/arda-pq-request/ready.json
+          if-no-files-found: error
+          retention-days: 1
+      - name: Wait for fresh public review request
+        env:
+          ARDA_REVIEW_SESSION: ${{ inputs.session }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/github_review_inbox.py
+      - name: Sign one review using existing enrolled key
+        env:
+          ARDA_WITNESS_IMAGE: ${{ vars.ARDA_WITNESS_IMAGE }}
+          ARDA_PROVIDER_CONFIG_SHA256: ${{ vars.ARDA_GITHUB_CONFIG_SHA256 }}
+          ARDA_GITHUB_SIGNER_PKCS8_B64: ${{ secrets[vars.ARDA_GITHUB_SIGNER_SECRET_NAME] }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -m 700 "$RUNNER_TEMP/arda-pq-output"
+          export ARDA_IMAGE_DIGEST="${ARDA_WITNESS_IMAGE##*@}"
+          docker run --rm --pull=never --network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges \
+            --user "$(id -u):$(id -g)" --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
+            --env ARDA_PROVIDER_CONFIG_SHA256 --env ARDA_GITHUB_SIGNER_PKCS8_B64 --env ARDA_IMAGE_DIGEST \
+            --env GITHUB_ACTIONS --env GITHUB_REPOSITORY --env GITHUB_WORKFLOW_REF --env GITHUB_SHA \
+            --mount "type=bind,src=$RUNNER_TEMP/arda-pq-config,dst=/app/operator-config,readonly" \
+            --mount "type=bind,src=$RUNNER_TEMP/arda-pq-request,dst=/request,readonly" \
+            --mount "type=bind,src=$RUNNER_TEMP/arda-pq-output,dst=/output" \
+            "$ARDA_WITNESS_IMAGE" python3 tools/provider_vote.py \
+            --provider github --request /request/request.json --out /output/github-vote.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: arda-github-pq-review-vote
+          path: ${{ runner.temp }}/arda-pq-output/github-vote.json
+          if-no-files-found: error
+          retention-days: 1

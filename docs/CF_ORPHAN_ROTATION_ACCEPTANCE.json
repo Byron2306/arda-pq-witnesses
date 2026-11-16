@@ -1,0 +1,31 @@
+{
+  "schema": "arda.cf.hss.rotation_candidate_acceptance.v1",
+  "tests": 223,
+  "full_verification_passed": true,
+  "sqlite_workerd_disposable_orphan_rotation": "PASS",
+  "exact_replacement_replay": "PASS",
+  "replacement_registration_native_verification": "PASS",
+  "wrangler_dry_run": "PASS",
+  "exact_reviewed_lenovo_bundle_installer_smoke": "PASS",
+  "review_critical_or_important_unresolved": 0,
+  "accepted_lenovo_wasm_sha256": "8e716fc5bf42ff2ce8259a18bb600a374599f7f8b5a85a37460e5d9b155f0b84",
+  "files_sha256": {
+    "cloudflare/hss-anchor.mjs": "b36ecde7329b782365cd4c929d8e52bfc7109d25c5ef0b3c00ea642c4fc087fc",
+    "cloudflare/hss-guard.mjs": "e912e0bb78812a89bc9444712a9c985b46f0616b29d17bed5d441a436514f992",
+    "cloudflare/hss-enrollment.mjs": "13260e94f39f243b96c542a11f3685dcc80dd98aac8f747cb9c44cd01d500f63",
+    "cloudflare/hss-rotation.mjs": "dfeb7e298fc42f76c1020cc785eb40a7ee176be8bd1fa4c9c5fd63b61ea193d4",
+    "providers/cloudflare/worker.mjs": "ea38aff483ee54a5b2bd37b4f168c824bfa02341dfe549d7b669f52620e59050",
+    "tools/cf_operator.py": "b0ec864ae5f59fd204d1584fd654f74a920128e9220c138360aeacef743b99cd",
+    "tools/install_cf_rotation.py": "3767037fc402e9626f47fba16ba16d76a88c103b5eb475412f9d1ebf570278ec"
+  },
+  "live_provider_calls": 0,
+  "live_rotation_performed": false,
+  "live_deployment_performed": false,
+  "production_authorized": false,
+  "interlock": "KEEP_CLOSED",
+  "original_archive_sha256": "40224b8d74ec827e66c866c5105cb0429db5ad630964e997799709090ec9c457",
+  "original_manifest_sha256": "91e17e2a6a85dc3adb540e87b35a6f6a13344271f8d31e16fcf54aebe716a3a8",
+  "complete_original_archive_install_and_replay": "PASS",
+  "installer_tests": 5,
+  "original_manifest_regression": "RED_TO_GREEN"
+}

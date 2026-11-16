@@ -1,0 +1,6 @@
+{
+  "name": "arda-pq-release-witness-candidate",
+  "version": "0.5.0",
+  "private": true,
+  "devDependencies": {"wrangler": "4.162.0"}
+}

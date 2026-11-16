@@ -1,0 +1,9 @@
+# Existing-key renewal overlay; base digest is preserved, overlay is separately reviewed.
+FROM ghcr.io/byron2306/arda-pq-witness@sha256:02dc4bacda942f58d040cc9093174d2cd6fc84fafc098bf0263a4ff61bda99bd
+COPY --chown=1000:1000 renew_existing.py /app/tools/renew_existing.py
+RUN printf '%s  %s\n' 'e4710eaa5e5c2df2c1af9e81beb974382a11ee92023c4ea2798083a6b5d08e68' /app/tools/renew_existing.py | sha256sum --check
+WORKDIR /app
+USER 1000:1000
+ENV ARDA_IMAGE_DIGEST=sha256:02dc4bacda942f58d040cc9093174d2cd6fc84fafc098bf0263a4ff61bda99bd
+EXPOSE 7860
+CMD ["python3", "tools/renew_existing.py", "hf-server"]

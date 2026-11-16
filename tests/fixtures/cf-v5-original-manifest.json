@@ -1,0 +1,18 @@
+{
+  "files_sha256": {
+    "build/WASM_BUILD.json": "85040294f1278e82a964f012c92c6e34e3cbaf2866a45d36e61feb08757cf5b4",
+    "build/hss-state-meta.mjs": "dd27be62f934f62749a3e36f612d5eeddbc7e6bc84b66e16a27b7d9585f0264a",
+    "build/hss-state.wasm": "8e716fc5bf42ff2ce8259a18bb600a374599f7f8b5a85a37460e5d9b155f0b84",
+    "cloudflare/hss-anchor.mjs": "16cd8ac36b6a87d092b8fe4bf547573619a3b5e77a69db8b2752c5de6739be55",
+    "cloudflare/hss-engine.mjs": "19d30b16d0b341bb910281132590720d16354e5ed86e2e94ae4d6260a90e9b0a",
+    "cloudflare/hss-enrollment.mjs": "1c4b9f720589d0fd7c2a598bc6725b59f456c1a5f4e89ec747ea053db9896809",
+    "cloudflare/hss-guard.mjs": "7d8c7c9dc0b392943e3978a746a5ba86261b5332756970465c7061dd8039987b",
+    "providers/cloudflare/package-lock.json": "4ce428e7a968b7c761954f556e9c6189bd071b7c56b126585a59812b3da28d8c",
+    "providers/cloudflare/package.json": "8d8c3499d2c2015eff1ca8c94d7e69c931d34b5c4e766b9d8dfc511df415c555",
+    "providers/cloudflare/worker.mjs": "43364fc2df8d22556e96e3db9c8849ae0d92c1d971b7333bbcac23c66ce2406f",
+    "providers/cloudflare/wrangler.toml": "e255fc92ddbf340b11c71df1521c8de3e0fca9a8442f9ae391fbb2dab1230a69"
+  },
+  "interlock": "KEEP_CLOSED",
+  "production_authorized": false,
+  "schema": "arda.cf.hss.public_bundle.v1"
+}
