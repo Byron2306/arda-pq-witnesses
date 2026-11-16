@@ -89,3 +89,20 @@ test('health cannot report an old policy with a newly changed configuration pin'
  assert.ok(mod);const s=await setup(),get=s.storage.get.bind(s.storage);s.storage.get=async name=>{const value=await get(name);if(name==='key'){const changed=structuredClone(s.config);changed.expected.manifest_id='different-approved-manifest';s.env.ARDA_CF_RELEASE_CONFIG_JSON=encode(wireConfig(changed)).toString();s.env.ARDA_CF_RELEASE_CONFIG_SHA256=digest(encode(wireConfig(changed)));}return value;};
  const r=await s.service.fetch(new Request('https://fixture.invalid/healthz'));assert.equal(r.status,409);assert.equal(s.burns.size,0);
 });
+test('authenticated archive diagnostics retrieve expired public proof without signing or authorizing',async()=>{
+ const s=await setup();assert.equal((await s.service.fetch(request(s))).status,200);
+ const hash=digest(encode(s.request.proposal)),cached=structuredClone(s.values.get('vote/'+hash).vote),before=structuredClone([...s.values]);s.now(1100);
+ const url='https://fixture.invalid/v1/review-status?proposal_sha256='+hash;
+ assert.equal((await s.service.fetch(new Request(url))).status,401);
+ const response=await s.service.fetch(new Request(url,{headers:{'X-ARDA-Review-Token':'aa'.repeat(32)}}));assert.equal(response.status,200);
+ const body=await response.json();assert.deepEqual(body.archived_vote,cached);assert.equal(body.archived_vote_expired,true);assert.equal(body.current_authorization,false);assert.equal(body.diagnostic_read_only,true);assert.equal(body.production_authorized,false);
+ assert.equal(s.burns.size,1);assert.deepEqual([...s.values],before);assert.notEqual((await s.service.fetch(request(s))).status,200);
+});
+test('archive diagnostics reject malformed queries and mismatched cached binding',async()=>{
+ const s=await setup();assert.equal((await s.service.fetch(request(s))).status,200);const hash=digest(encode(s.request.proposal));
+ for(const suffix of ['proposal_sha256=bad','proposal_sha256='+hash+'&extra=1','proposal_sha256='+hash+'&proposal_sha256='+hash]){
+ const r=await s.service.fetch(new Request('https://fixture.invalid/v1/review-status?'+suffix,{headers:{'X-ARDA-Review-Token':'aa'.repeat(32)}}));assert.notEqual(r.status,200);
+ }
+ s.values.get('vote/'+hash).vote.payload.key_sha256='ff'.repeat(32);
+ const r=await s.service.fetch(new Request('https://fixture.invalid/v1/review-status?proposal_sha256='+hash,{headers:{'X-ARDA-Review-Token':'aa'.repeat(32)}}));assert.notEqual(r.status,200);assert.equal(s.burns.size,1);
+});

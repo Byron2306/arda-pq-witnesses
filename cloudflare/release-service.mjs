@@ -39,7 +39,22 @@ export class CloudflareWitnessService{
    let observed=0;const clock=()=>{const now=this.clock();need(Number.isSafeInteger(now)&&now>0&&now>=observed,'REVIEW_CLOCK_ROLLBACK');observed=now;return now;};
    let config;try{config=await validateReleaseConfig(configurationEnv,this.options.wasmSha,clock());need(this.env.ARDA_CF_RELEASE_CONFIG_SHA256===configPin,'CONFIG_CHANGED');}catch{return reply(503,{error:'CF_RELEASE_NOT_CONFIGURED'});}
    if(request.method==='GET'){
-    try{const {leaf,witness}=await this.key(config,clock);await validateReleaseConfig({...this.env},this.options.wasmSha,clock());need(this.env.ARDA_CF_RELEASE_CONFIG_SHA256===configPin,'CONFIG_CHANGED');window(config.policy,clock(),366*86400);window(config.stage_window,clock(),30*86400);return reply(200,{mode:'release_review_only',key_sha256:witness.key_sha256,next_leaf:leaf,policy_sha256:config.policy_file_sha256,config_sha256:configPin});}catch{return reply(409,{error:'CF_RELEASE_KEY_UNAVAILABLE'});}
+    try{const {leaf,witness}=await this.key(config,clock);await validateReleaseConfig({...this.env},this.options.wasmSha,clock());need(this.env.ARDA_CF_RELEASE_CONFIG_SHA256===configPin,'CONFIG_CHANGED');window(config.policy,clock(),366*86400);window(config.stage_window,clock(),30*86400);const query=new URL(request.url).searchParams;
+     const status={mode:'release_review_only',key_sha256:witness.key_sha256,next_leaf:leaf,policy_sha256:config.policy_file_sha256,config_sha256:configPin};
+     if(query.size){
+      need(path==='/v1/review-status'&&query.size===1&&query.has('proposal_sha256')&&hex64(query.get('proposal_sha256')),'DIAGNOSTIC_QUERY');
+      const hash=query.get('proposal_sha256'),entry=await this.storage.get('vote/'+hash);
+      status.diagnostic_read_only=true;status.current_authorization=false;status.archived_vote_present=Boolean(entry);
+      const current=await this.storage.get('key');status.clock_watermark=current?.clock_watermark??null;
+      if(entry){
+       need(entry.config_sha256===configPin&&entry.epoch===config.policy.epoch&&hex64(entry.nonce),'ARCHIVE_CONTEXT');
+       const p=entry.vote?.payload;need(p?.proposal_sha256===hash&&p.key_sha256===witness.key_sha256&&p.policy_sha256===config.policy_file_sha256&&p.provider==='cloudflare','ARCHIVE_BINDING');
+       const nonce=await this.storage.get('nonce/'+entry.epoch+'/'+entry.nonce);need(nonce?.proposal_sha256===hash&&nonce.key_sha256===witness.key_sha256&&nonce.policy_sha256===config.policy_file_sha256,'ARCHIVE_NONCE');
+       status.archived_vote=entry.vote;status.archived_vote_expired=clock()>=p.expires_at;
+      }
+      need(this.env.ARDA_CF_RELEASE_CONFIG_SHA256===configPin,'CONFIG_CHANGED');
+     }
+     return reply(200,status);}catch{return reply(409,{error:'CF_RELEASE_KEY_UNAVAILABLE'});}
    }
    let input,review;try{input=await body(request);review=await validateReview(config,input,clock());}catch{return reply(400,{error:'CF_REVIEW_REQUEST_REFUSED'});}
    try{
