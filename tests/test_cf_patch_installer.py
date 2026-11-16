@@ -38,3 +38,18 @@ class InstallerTests(unittest.TestCase):
             (root/'cloudflare/source.mjs').unlink();(root/'cloudflare/source.mjs').symlink_to(outside)
             with patch.object(installer,'DATA',data),self.assertRaises(SystemExit):installer.install(root)
             self.assertEqual(outside.read_bytes(),b'old source')
+    def test_original_uploaded_manifest_is_accepted_without_relaxing_source_pins(self):
+        original=Path(__file__).parent/'fixtures/cf-v5-original-manifest.json'
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/'bundle';root.mkdir();data=self.fixture(root)
+            data['allowed_manifest_sha256']+=installer.DATA['allowed_manifest_sha256']
+            (root/'BUNDLE_MANIFEST.json').write_bytes(original.read_bytes())
+            with patch.object(installer,'DATA',data),contextlib.redirect_stdout(io.StringIO()):installer.install(root)
+            self.assertEqual((root/'cloudflare/source.mjs').read_bytes(),b'new source')
+            self.assertEqual((root/'build/hss-state.wasm').read_bytes(),b'unchanged wasm')
+    def test_unknown_manifest_still_refuses_before_source_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);data=self.fixture(root)
+            (root/'BUNDLE_MANIFEST.json').write_text('{"schema":"unexpected"}')
+            with patch.object(installer,'DATA',data),self.assertRaisesRegex(SystemExit,'MANIFEST_HASH_MISMATCH'):installer.install(root)
+            self.assertEqual((root/'cloudflare/source.mjs').read_bytes(),b'old source')

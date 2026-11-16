@@ -19,3 +19,7 @@ Final: no deferred minor findings. No live deployment, key rotation or enrollmen
 Final full verification: 221 tests PASS after all code/test changes. Real SQLite/workerd replacement, exact replay and new enrollment PASS; replacement signature verified natively. Public Wasm and source dry-run PASS; exact reviewed Lenovo bundle installer smoke PASS. Upstream OpenSSL deprecation warnings remain recorded in the normal verification report. No live provider changes.
 
 Final installer review: no new Critical/Important findings; all 3 installer tests pass. Publish the existing candidate branch / draft PR only; no merge or live provider action.
+
+Follow-up installer defect: the extracted baseline omitted BUNDLE_MANIFEST.json, so the generated installer accepted only its new manifest. Recovered the exact original manifest from the Library archive whose SHA256 matches the previously accepted 40224b8d…9c457. Added only its exact SHA256 91e17e2a…a3a8 to the manifest allowlist. No source, Wasm, path, or unknown-manifest guard was relaxed. Original-manifest installation regression RED→GREEN; all 5 installer tests PASS. Complete original archive extraction, install and second install PASS, with Wasm8e unchanged and every new manifest entry verified. The user refusal happened before any file write.
+
+Follow-up final verification: 223 tests PASS, including all five installer cases. No provider deployment, signing, rotation, counter change or secret mutation performed.
