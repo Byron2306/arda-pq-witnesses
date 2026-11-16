@@ -55,3 +55,10 @@ test('anchor uses manual redirects and rejects them without following',async()=>
  s.anchor.fetcher=async function(url,options){assert.equal(options.redirect,'manual');calls++;return new Response(null,{status:302,headers:{Location:'https://other.example/'}});};
  const result=await s.anchor.inspect();assert.equal(calls,1);assert.equal(result.ok,false);assert.equal(result.http_status,302);
 });
+test('registration cache payload must match the signed message before any leaf burn',async()=>{
+ const initial=setup();await initial.ready();const state=initial.snapshot();state.registration_issued_at=1000;
+ const s=setup(initial.net,state);
+ const payload={schema:'arda.pq.key_registration.v1',provider:'cloudflare',algorithm:'HSS-LMS-SHA256-N32-H10-W8',key_sha256:key,public_key_b64:Buffer.from(pub).toString('base64'),ceremony_sha256:'ab'.repeat(32),issued_at:1000,expires_at:1100};
+ const signer=new GuardedHssSigner({storage:s.storage,engine:s.engine,anchor:s.anchor,clock:()=>1000,registrationPayload:payload});
+ const r=await signer.sign(request());assert.equal(r.signature_created,false);assert.equal(s.signs,0);assert.equal(s.net.refs.size,0);assert.equal(s.snapshot().state,'ACTIVE');
+});

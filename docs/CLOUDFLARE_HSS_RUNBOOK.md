@@ -69,3 +69,9 @@ Review the public key and registration hashes independently, then add the third 
 ## Acceptance status at publication
 
 Local Node tests exercise real HSS Wasm signatures and native/Python public proof verification, plus explicit simulated GitHub/storage fault and concurrency cases. Wrangler dry-run bundling passed. Local workerd disposable self-test passed, and its returned HSS proof was independently verified by the native verifier (about 7.3 seconds local elapsed wall time, not a hosted CPU measurement). Explicit listen/inspector addresses were needed to avoid this environment's interface-discovery restriction. The local test did not mutate a GitHub anchor or enroll a real key. Actual protected-tag enforcement and hosted Cloudflare acceptance remain required. No production cutover, remote HSS key generation, live vote, Rekor publication, plan change or billing change was performed.
+
+## Atomic enrollment persistence repair
+
+The original enrollment implementation synchronized the advanced private key before a second write cached the public registration. A process interruption in that gap could leave an ACTIVE key at q=1 without its public record. The repaired enrollment path supplies the exact public registration payload to the guard. The guard verifies that payload against the signed message, key and ceremony, then commits both advanced key and public record in one multi-key storage operation before synchronization and release. No network or signing operation is placed inside a retryable transaction.
+
+This repair is prospective: it does not recover a previously lost signature, roll back a counter, sign at a later registration leaf, or rotate a deployed key. Existing advanced keys without a public cache continue to refuse enrollment. Preserve the existing key and external markers pending a separate reviewed recovery/rotation ceremony.

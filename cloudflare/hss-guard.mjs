@@ -9,9 +9,10 @@ export function canonical(value){
  return new TextEncoder().encode(JSON.stringify(normalize(value)).replace(/[\u007f-\uffff]/g,c=>'\\u'+c.charCodeAt(0).toString(16).padStart(4,'0')));
 }
 export async function sha(bytes){need(bytes instanceof Uint8Array,'HASH_BYTES');return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');}
+const encode64=bytes=>{let text='';for(const byte of bytes)text+=String.fromCharCode(byte);return btoa(text);};
 const closed=reason=>({signature_created:false,production_authorized:false,interlock:'KEEP_CLOSED',reason});
 export class GuardedHssSigner {
- constructor({storage,engine,anchor,clock=()=>Math.floor(Date.now()/1000)}){this.storage=storage;this.engine=engine;this.anchor=anchor;this.clock=clock;this.busy=false;this.quarantined=false;}
+ constructor({storage,engine,anchor,clock=()=>Math.floor(Date.now()/1000),registrationPayload}){this.storage=storage;this.engine=engine;this.anchor=anchor;this.clock=clock;this.busy=false;this.quarantined=false;this.registrationPayload=registrationPayload===undefined?undefined:JSON.parse(new TextDecoder().decode(canonical(registrationPayload)));}
  now(){const n=this.clock();need(Number.isSafeInteger(n)&&n>0,'CLOCK');return n;}
  async sign(request){if(this.busy||this.quarantined)return closed('KEY_BUSY_OR_QUARANTINED');this.busy=true;let state,attempted=false;
   try {
@@ -25,6 +26,12 @@ export class GuardedHssSigner {
    need(state.anchor_sha256===await sha(canonical(this.anchor.configuration)),'ANCHOR_CONFIGURATION_BINDING');
    need(Number.isSafeInteger(state.clock_watermark)&&start>=state.clock_watermark,'CLOCK_ROLLBACK');
    const leaf=this.engine.leaf(state.privateState);need(Number.isSafeInteger(leaf)&&leaf>=0&&leaf<1024,'KEY_EXHAUSTED');
+   if(this.registrationPayload!==undefined){
+    const p=this.registrationPayload;
+    need(r.kind==='registration'&&p.schema==='arda.pq.key_registration.v1'&&p.provider==='cloudflare'&&p.algorithm==='HSS-LMS-SHA256-N32-H10-W8'&&p.key_sha256===state.key_sha256&&p.public_key_b64===encode64(state.publicKey)&&p.ceremony_sha256===r.context_sha256&&p.expires_at===r.expires_at&&p.issued_at===state.registration_issued_at,'REGISTRATION_COMMIT_BINDING');
+    const domain=new TextEncoder().encode('ARDA/PQ-QUORUM/ENROLLMENT/v1\0'),payload=canonical(p),expected=new Uint8Array(domain.length+payload.length);expected.set(domain);expected.set(payload,domain.length);
+    need(expected.length===r.message.length&&expected.every((byte,i)=>byte===r.message[i]),'REGISTRATION_COMMIT_MESSAGE');
+   }
    const message_sha256=await sha(r.message);const nonce=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');
    attempted=true;
    const receipt=await this.anchor.burn({kind:r.kind,key_sha256:state.key_sha256,leaf,message_sha256,context_sha256:r.context_sha256,attempt_nonce:nonce,issued_at:start,expires_at:r.expires_at});
@@ -35,7 +42,12 @@ export class GuardedHssSigner {
    need(out.privateState instanceof Uint8Array&&this.engine.leaf(out.privateState)===leaf+1,'PRIVATE_STATE_ADVANCE');
    const afterSign=this.now();need(afterBurn<=afterSign,'CLOCK_ROLLBACK_AFTER_SIGN');
    state={...state,privateState:out.privateState.slice(),clock_watermark:afterSign};
-   await this.storage.put('key',state);await this.storage.sync();
+   if(this.registrationPayload!==undefined){
+    // One atomic storage operation commits the public proof with the advanced key.
+    const registration={payload:this.registrationPayload,signature_b64:encode64(out.signature)};
+    await this.storage.put({key:state,registration});
+   }else await this.storage.put('key',state);
+   await this.storage.sync();
    const end=this.now();need(afterSign<=end&&end<r.expires_at,'EXPIRY_AFTER_DURABILITY');
    return {...closed('EXTERNALLY_BURNED_CANDIDATE_SIGNATURE'),signature_created:true,signature:out.signature.slice(),leaf,anchor_ref:receipt.ref,anchor_tag_sha:receipt.tag_sha};
   }catch {

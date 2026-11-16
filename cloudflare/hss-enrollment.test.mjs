@@ -5,12 +5,12 @@ const now=1000,image='sha256:'+'ab'.repeat(32),wasm='cd'.repeat(32);
 const ceremony={schema:'arda.pq.enrollment_ceremony.v1',nonce:'ef'.repeat(32),image_digest:image,identities:{github:'Byron2306/arda-pq-witnesses',hf:'Byron230686/arda-pq-policy-witness',cloudflare:'arda-pq-release-witness'},issued_at:900,expires_at:2000,production_authorized:false};
 const anchor={schema:'arda.hss.anchor.v1',repository:'Byron2306/arda-hss-leaf-anchor',genesis_commit:'12'.repeat(20),ruleset_id:7,rules_sha256:'34'.repeat(32)};
 const config={schema:'arda.cf.hss.enrollment_config.v1',worker_identity:'arda-pq-release-witness',ceremony,ceremony_sha256:await sha(canonical(ceremony)),anchor,wasm_sha256:wasm,production_authorized:false};
-async function setup(){const values=new Map();let generations=0,burns=0;const storage={async get(k){return structuredClone(values.get(k));},async put(k,v){values.set(k,structuredClone(v));},async sync(){}};
+async function setup(){const values=new Map(),commits=[];let generations=0,burns=0;const storage={async get(k){return structuredClone(values.get(k));},async put(k,v){if(typeof k==='string')values.set(k,structuredClone(v));else for(const [name,value] of Object.entries(k))values.set(name,structuredClone(value));commits.push(structuredClone([...values]));},async sync(){}};
  const engine={leaf:s=>s[7],async generate(){generations++;const publicKey=new Uint8Array(60);publicKey.set([0,0,0,1,0,0,0,6,0,0,0,4]);return {privateState:new Uint8Array(64),publicKey};},async sign(s,p,m){const next=s.slice();next[7]++;return {privateState:next,signature:new Uint8Array(1456),leaf:0};}};
  const env={ARDA_CF_CONFIG_JSON:new TextDecoder().decode(canonical(config)),ARDA_CF_CONFIG_SHA256:await sha(canonical(config)),ARDA_CF_SETUP_CLIENT_TOKEN:'aa'.repeat(32),ARDA_CF_ANCHOR_TOKEN:'fixture-token'};
  const anchorFactory=c=>({configuration:c,async burn(r){burns++;return {...r,ref:'refs/tags/test',tag_sha:'56'.repeat(20)};}});
  const service=new CloudflareEnrollmentService({storage,env,engine,wasmSha:wasm,clock:()=>now,anchorFactory});
- return {service,env,values,get generations(){return generations;},get burns(){return burns;}};
+ return {service,env,values,storage,commits,get generations(){return generations;},get burns(){return burns;}};
 }
 function request(action='provision_cloudflare_key',token='aa'.repeat(32),path='/v1/enroll-cf'){return new Request('https://arda-pq-release-witness.example.workers.dev'+path,{method:'POST',headers:{'X-ARDA-Setup-Token':token,'Content-Type':'application/json'},body:new TextDecoder().decode(canonical({action,ceremony_sha256:config.ceremony_sha256}))});}
 test('health and startup do not generate an HSS key',async()=>{const s=await setup();const r=await s.service.fetch(new Request('https://example/healthz'));assert.equal(r.status,200);assert.equal(s.generations,0);});
@@ -38,4 +38,24 @@ test('inspection can read expired-ceremony state while enrollment stays refused'
  const s=await setup();s.service.clock=()=>3000;
  assert.equal((await s.service.fetch(statusRequest())).status,200);
  assert.equal((await s.service.fetch(request())).status,503);assert.equal(s.generations,0);
+});
+
+test('every active advanced enrollment commit contains the matching public registration',async()=>{
+ const s=await setup();const r=await s.service.fetch(request());assert.equal(r.status,200);
+ const body=await r.json();let advanced=0;
+ for(const entries of s.commits){const snapshot=new Map(entries),key=snapshot.get('key');if(key?.state==='ACTIVE'&&key.privateState[7]===1){advanced++;assert.deepEqual(snapshot.get('registration'),body.registration);}}
+ assert.ok(advanced>0);
+});
+test('interruption after the advanced enrollment commit leaves a recoverable public cache',async()=>{
+ const s=await setup(),put=s.storage.put.bind(s.storage);let interrupted=false;
+ s.storage.put=async(k,v)=>{await put(k,v);if(!interrupted&&s.values.get('key')?.privateState[7]===1&&!s.values.has('registration')){interrupted=true;throw Error('simulated interruption between separate writes');}};
+ const r=await s.service.fetch(request());assert.equal(r.status,200);assert.equal(s.values.has('registration'),true);
+ assert.equal((await s.service.fetch(request())).status,200);assert.equal(s.generations,1);assert.equal(s.burns,1);
+});
+test('uncertain atomic commit withholds output and quarantines without another burn',async()=>{
+ const s=await setup(),put=s.storage.put.bind(s.storage);let failed=false;
+ s.storage.put=async(k,v)=>{await put(k,v);if(typeof k==='object'&&!failed){failed=true;throw Error('lost acknowledgment after atomic commit');}};
+ const r=await s.service.fetch(request());assert.equal(r.status,409);assert.equal((await r.json()).registration,undefined);
+ assert.equal(s.values.get('key').state,'QUARANTINED');assert.equal(s.values.has('registration'),true);
+ assert.equal((await s.service.fetch(request())).status,409);assert.equal(s.burns,1);
 });

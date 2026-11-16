@@ -34,7 +34,7 @@ test('enrollment Worker core produces a real Python-verifiable HSS registration'
  const anchor={schema:'arda.hss.anchor.v1',repository:'Byron2306/arda-hss-leaf-anchor',genesis_commit:'12'.repeat(20),ruleset_id:7,rules_sha256:'34'.repeat(32)};
  const config={schema:'arda.cf.hss.enrollment_config.v1',worker_identity:'arda-pq-release-witness',ceremony,ceremony_sha256:await sha(canonical(ceremony)),anchor,wasm_sha256:'cd'.repeat(32),production_authorized:false};
  const env={ARDA_CF_CONFIG_JSON:new TextDecoder().decode(canonical(config)),ARDA_CF_CONFIG_SHA256:await sha(canonical(config)),ARDA_CF_SETUP_CLIENT_TOKEN:'aa'.repeat(32)};
- const values=new Map(),storage={async get(k){return structuredClone(values.get(k));},async put(k,v){values.set(k,structuredClone(v));},async sync(){}};
+ const values=new Map(),storage={async get(k){return structuredClone(values.get(k));},async put(k,v){if(typeof k==='string')values.set(k,structuredClone(v));else for(const [name,value] of Object.entries(k))values.set(name,structuredClone(value));},async sync(){}};
  const service=new CloudflareEnrollmentService({storage,env,engine,wasmSha:config.wasm_sha256,clock:()=>now,anchorFactory:c=>({configuration:c,async burn(r){return {...r,ref:'refs/tags/test',tag_sha:'56'.repeat(20)};}})});
  const response=await service.fetch(new Request('https://example/v1/enroll-cf',{method:'POST',headers:{'X-ARDA-Setup-Token':'aa'.repeat(32),'Content-Type':'application/json'},body:new TextDecoder().decode(canonical({action:'provision_cloudflare_key',ceremony_sha256:config.ceremony_sha256}))}));
  assert.equal(response.status,200,await response.clone().text());const body=await response.json();

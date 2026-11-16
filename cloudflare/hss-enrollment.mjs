@@ -65,11 +65,10 @@ export class CloudflareEnrollmentService {
    }
    const payload={schema:'arda.pq.key_registration.v1',ceremony_sha256:c.ceremony_sha256,provider:'cloudflare',provider_identity:c.worker_identity,witness_id:'cloudflare:'+c.worker_identity,role:'release_witness',algorithm:'HSS-LMS-SHA256-N32-H10-W8',key_sha256:state.key_sha256,public_key_b64:encode64(state.publicKey),secret_name:null,issued_at:state.registration_issued_at,expires_at:c.ceremony.expires_at};
    const body=canonical(payload),domain=new TextEncoder().encode('ARDA/PQ-QUORUM/ENROLLMENT/v1\0'),message=new Uint8Array(domain.length+body.length);message.set(domain);message.set(body,domain.length);
-   const signer=new GuardedHssSigner({storage:this.storage,engine:this.engine,anchor:this.anchorFactory(c.anchor),clock:this.clock});
+   const signer=new GuardedHssSigner({storage:this.storage,engine:this.engine,anchor:this.anchorFactory(c.anchor),clock:this.clock,registrationPayload:payload});
    const result=await signer.sign({kind:'registration',context_sha256:c.ceremony_sha256,message,expires_at:c.ceremony.expires_at});
    need(result.signature_created===true&&result.leaf===0,'HSS_REGISTRATION_REFUSED');
    const registration={payload,signature_b64:encode64(result.signature)};
-   await this.storage.put('registration',registration);await this.storage.sync();
    await configuration(this.env,this.wasmSha,this.clock());return reply(200,{registration});
   }catch{return reply(409,{error:'CF_ENROLLMENT_REFUSED_OPERATOR_REVIEW_REQUIRED'});}finally{this.busy=false;}
  }
