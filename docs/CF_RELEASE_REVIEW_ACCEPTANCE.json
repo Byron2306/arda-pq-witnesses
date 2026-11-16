@@ -1,0 +1,41 @@
+{
+  "schema": "arda.cf.release_review_candidate_acceptance.v1",
+  "verified_at_utc": "2026-11-16T13:54:59.257043+00:00",
+  "base_commit": "50b68354dcb89ca1941f448538edc578598f28fb",
+  "full_suite_tests": 270,
+  "full_suite_passed": true,
+  "native_r13_raw_quote_challenge_receipt_interop": "PASS",
+  "real_sqlite_existing_enrolled_key_review": "PASS",
+  "real_worker_three_algorithm_r13_certificate": "PASS",
+  "native_hss_vote_verification": "PASS",
+  "atomic_vote_nonce_key_cache_replay": "PASS",
+  "previous_enrollment_orphan_replacement_runtime": "PASS",
+  "exact_accepted_wasm_runtime": "PASS",
+  "exact_accepted_wasm_dry_run": "PASS",
+  "accepted_wasm_sha256": "8e716fc5bf42ff2ce8259a18bb600a374599f7f8b5a85a37460e5d9b155f0b84",
+  "original_public_bundle_upgrade_and_reapply": "PASS",
+  "review_important_findings_fixed": 2,
+  "review_critical_or_important_unresolved": 0,
+  "review_minor_findings": 0,
+  "live_policy_file_sha256": "30f2dd836a36a85e5c16693b71171825b159d6da852ee595542cf03779bbc976",
+  "prepared_release_config_sha256": "28f71669ea93f3c43b2379d25ab89162bd03431f442924f436e3486d65c3499f",
+  "prepared_binding_bytes": {
+    "policy": 3622,
+    "config": 2514
+  },
+  "live_provider_calls": 0,
+  "live_deployment_performed": false,
+  "production_keys_created_or_exported": false,
+  "production_authorized": false,
+  "interlock": "KEEP_CLOSED",
+  "files_sha256": {
+    "cloudflare/hss-guard.mjs": "013943810dc89b0d84cd74785b63055f4f974eb068748716a6112417c7a29e43",
+    "providers/cloudflare/worker.mjs": "b121a651f76f5e64b82c47c56ce33f9a89f43c95f486c12a3a7ff44fc528a4cc",
+    "cloudflare/review-protocol.mjs": "b72e366930212aaa5396c3b8627225e667f44baccd606e6ffbc3c28f9089f7cf",
+    "cloudflare/r13-capture.mjs": "412fabfa7a0ea25f0894b90a98b8e9dca7101d63e2a7a0ba11bd95f7eec45400",
+    "cloudflare/release-config.mjs": "95f74569f454d55b366370b48ecb27f090a7ffaa77edbb5b414fc721398244dd",
+    "cloudflare/release-service.mjs": "bbae236899012287c43c3469e004084dba757a36c03ffc90a7a05908e22f732f",
+    "tools/prepare_cf_review.py": "9d6028d611a9dd3017bfdc386d89efff9a7b644318de9a15704efc73c87d0b55",
+    "tools/install_cf_review.py": "729ecc3d2853aeec1a1ef84cf5678293f20a48a7f1f2065ad4a7b61a015fe3c4"
+  }
+}

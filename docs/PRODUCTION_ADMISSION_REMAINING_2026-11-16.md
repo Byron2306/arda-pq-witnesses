@@ -1,5 +1,7 @@
 # Enrollment accepted; remaining release/admission work
 
+Update: the Cloudflare release-vote adapter is now implemented and tested as a candidate; see CLOUDFLARE_RELEASE_REVIEW.md and CF_RELEASE_REVIEW_ACCEPTANCE.json. Live activation and provider voting remain pending. The original enrollment-review findings below are retained with this status update.
+
 ## Verified on 16 November 2026
 
 The uploaded public archive SHA256 is `a097bfd39326758fcf23a1108d3269e3b3ba1c9d16a584c6bb0f031d646afe26`. Native OpenSSL ML-DSA-65 / SLH-DSA-SHA2-192s verification and the pinned native HSS verifier independently accept all three real registration proofs at current time. All seven files are canonical; all provider record pins match; every proof binds the same ceremony and expected existing/replacement key. Re-running `assemble` at the policy issuance time reproduces both the result and policy byte for byte. Policy SHA256: `30f2dd836a36a85e5c16693b71171825b159d6da852ee595542cf03779bbc976`, epoch 1, closed candidate.
@@ -10,12 +12,12 @@ This completes this enrollment ceremony. No new provider key, Cloudflare rotatio
 
 | Work | Current evidence | Completion condition |
 | --- | --- | --- |
-| Provider release voting | `providers/cloudflare/worker.mjs` exposes enrollment/status/self-test/replacement only. `GuardedHssSigner` supports a vote signing primitive but has no complete policy/proposal/R13-validating HTTP release adapter. GH/HF review implementations/templates exist; current hosted HF app is renewal-only and GitHub evidence is an enrollment run. | Implement/review the CF release adapter using the enrolled key and existing external leaf-burn guard; configure/deploy the existing GH/HF review paths against this policy and exact runtime/source pins. Preserve HSS counters and all existing burn markers. |
+| Provider release voting | The candidate now has a full policy/proposal/raw-R13-validating CF release adapter with atomic vote/key/nonce persistence and existing-key real SQLite/Wasm acceptance. GH/HF review implementations/templates exist; current hosted HF app is renewal-only and GitHub evidence is an enrollment run. | Install/configure and accept the reviewed CF release adapter using the enrolled key and existing external leaf-burn guard; configure/deploy the existing GH/HF review paths against this policy and exact runtime/source pins. Preserve HSS counters and all existing burn markers. |
 | One real R13-bound three-provider certificate | The archive contains registrations, not release votes. `r13_bridge.py` verifies fresh captures and all-three votes locally. R13 evidence is bounded to 120 seconds. | Prepare services before capture, collect a fresh pinned challenge/quote/receipt, get all three votes for the same exact proposal, and independently verify the resulting certificate within its validity window. Record hosted deployment/provenance evidence with that run. |
 | Verified transparency evidence | No Rekor entry/proof is supplied. There is no Rekor verification implementation in this source package; `verify_with_r13` explicitly carries the requirement. | Implement pinned-log verification of the intended artifact binding, inclusion and signed checkpoint; test tampered proof/log/artifact and stale/mismatched bindings. A log submission receipt alone does not satisfy this. |
 | ARDA production admission and consumption | This package's `ReviewJournal` records REVIEW_INTENT only; verification results explicitly retain production_authorized=false. The archive cannot establish the latest state of separate live ARDA consumers. | Audit the current host/repository integration, connect verified evidence to the exact permitted generation/manifest mutation and durable one-time consumption, validate refusal/replay/recovery behavior, then stage/install through the actual admission path. |
 
-The first engineering dependency is the Cloudflare release-vote adapter. GH/HF review-runtime preparation can be completed alongside it. Capture fresh R13 evidence after readiness so its short lifetime is not consumed by builds or workflow setup.
+The first activation dependency is deploying/configuring the now-tested Cloudflare release-vote adapter. GH/HF review-runtime preparation can be completed alongside it. Capture fresh R13 evidence after readiness so its short lifetime is not consumed by builds or workflow setup.
 
 ## Reading the six legacy blocker labels
 

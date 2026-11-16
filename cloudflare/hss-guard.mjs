@@ -12,7 +12,7 @@ export async function sha(bytes){need(bytes instanceof Uint8Array,'HASH_BYTES');
 const encode64=bytes=>{let text='';for(const byte of bytes)text+=String.fromCharCode(byte);return btoa(text);};
 const closed=reason=>({signature_created:false,production_authorized:false,interlock:'KEEP_CLOSED',reason});
 export class GuardedHssSigner {
- constructor({storage,engine,anchor,clock=()=>Math.floor(Date.now()/1000),registrationPayload}){this.storage=storage;this.engine=engine;this.anchor=anchor;this.clock=clock;this.busy=false;this.quarantined=false;this.registrationPayload=registrationPayload===undefined?undefined:JSON.parse(new TextDecoder().decode(canonical(registrationPayload)));}
+ constructor({storage,engine,anchor,clock=()=>Math.floor(Date.now()/1000),registrationPayload,voteContext}){this.storage=storage;this.engine=engine;this.anchor=anchor;this.clock=clock;this.busy=false;this.quarantined=false;this.voteContext=voteContext===undefined?undefined:JSON.parse(new TextDecoder().decode(canonical(voteContext)));this.registrationPayload=registrationPayload===undefined?undefined:JSON.parse(new TextDecoder().decode(canonical(registrationPayload)));}
  now(){const n=this.clock();need(Number.isSafeInteger(n)&&n>0,'CLOCK');return n;}
  async sign(request){if(this.busy||this.quarantined)return closed('KEY_BUSY_OR_QUARANTINED');this.busy=true;let state,attempted=false;
   try {
@@ -32,6 +32,16 @@ export class GuardedHssSigner {
     const domain=new TextEncoder().encode('ARDA/PQ-QUORUM/ENROLLMENT/v1\0'),payload=canonical(p),expected=new Uint8Array(domain.length+payload.length);expected.set(domain);expected.set(payload,domain.length);
     need(expected.length===r.message.length&&expected.every((byte,i)=>byte===r.message[i]),'REGISTRATION_COMMIT_MESSAGE');
    }
+   if(this.voteContext!==undefined){
+    const v=this.voteContext,p=v.payload;
+    need(this.registrationPayload===undefined&&v&&Object.keys(v).sort().join(',')==='config_sha256,epoch,nonce,payload'&&hex64(v.config_sha256)&&hex64(v.nonce)&&Number.isSafeInteger(v.epoch)&&v.epoch>0,'VOTE_COMMIT_CONTEXT');
+    need(r.kind==='vote'&&p&&Object.keys(p).sort().join(',')==='algorithm,decision,expires_at,issued_at,key_sha256,policy_sha256,proposal_sha256,provider,role,schema,witness_id','VOTE_COMMIT_FIELDS');
+    need(p.schema==='arda.pq.vote.v1'&&p.provider==='cloudflare'&&p.role==='release_witness'&&p.algorithm==='HSS-LMS-SHA256-N32-H10-W8'&&p.witness_id==='cloudflare:arda-pq-release-witness'&&p.decision==='APPROVE'&&p.key_sha256===state.key_sha256&&hex64(p.policy_sha256)&&p.proposal_sha256===r.context_sha256&&p.issued_at===start&&p.expires_at===r.expires_at,'VOTE_COMMIT_BINDING');
+    need(state.review_epoch===undefined||(Number.isSafeInteger(state.review_epoch)&&v.epoch>=state.review_epoch&&(v.epoch!==state.review_epoch||state.review_policy_sha256===p.policy_sha256)),'REVIEW_POLICY_ROLLBACK');
+    need(await this.storage.get('nonce/'+v.epoch+'/'+v.nonce)===undefined,'REVIEW_NONCE_ALREADY_USED');
+    const domain=new TextEncoder().encode('ARDA/PQ-QUORUM/VOTE/v1\0'),body=canonical(p),expected=new Uint8Array(domain.length+body.length);expected.set(domain);expected.set(body,domain.length);
+    need(expected.length===r.message.length&&expected.every((byte,i)=>byte===r.message[i]),'VOTE_COMMIT_MESSAGE');
+   }
    const message_sha256=await sha(r.message);const nonce=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');
    attempted=true;
    const receipt=await this.anchor.burn({kind:r.kind,key_sha256:state.key_sha256,leaf,message_sha256,context_sha256:r.context_sha256,attempt_nonce:nonce,issued_at:start,expires_at:r.expires_at});
@@ -46,6 +56,12 @@ export class GuardedHssSigner {
     // One atomic storage operation commits the public proof with the advanced key.
     const registration={payload:this.registrationPayload,signature_b64:encode64(out.signature)};
     await this.storage.put({key:state,registration});
+   }else if(this.voteContext!==undefined){
+    const v=this.voteContext,p=v.payload;
+    state={...state,review_epoch:v.epoch,review_policy_sha256:p.policy_sha256};
+    const vote={payload:p,signature_b64:encode64(out.signature)};
+    const entry={vote,config_sha256:v.config_sha256,epoch:v.epoch,nonce:v.nonce};
+    await this.storage.put({key:state,['vote/'+p.proposal_sha256]:entry,['nonce/'+v.epoch+'/'+v.nonce]:{proposal_sha256:p.proposal_sha256,policy_sha256:p.policy_sha256,key_sha256:p.key_sha256}});
    }else await this.storage.put('key',state);
    await this.storage.sync();
    const end=this.now();need(afterSign<=end&&end<r.expires_at,'EXPIRY_AFTER_DURABILITY');
