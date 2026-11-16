@@ -21,7 +21,7 @@ export class ProtectedGitHubAnchor {
  }
  async request(path,method='GET',body){
   const base='https://api.github.com/repos/'+REPOSITORY;
-  const allowed=(method==='GET'&&path==='/rulesets/'+this.configuration.ruleset_id)||(method==='POST'&&['/git/tags','/git/refs'].includes(path));need(allowed,'ANCHOR_ENDPOINT');
+  const allowed=(method==='GET'&&(path==='/rulesets/'+this.configuration.ruleset_id||/^\/git\/ref\/tags\/arda-hss-leaf-[0-9a-f]{64}-0000$/.test(path)||/^\/git\/tags\/[0-9a-f]{40}$/.test(path)))||(method==='POST'&&['/git/tags','/git/refs'].includes(path));need(allowed,'ANCHOR_ENDPOINT');
   // Native Workers fetch must be called without this adapter as its receiver.
   const fetcher=this.fetcher;
   const response=await fetcher(base+path,{method,redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(15000),
@@ -42,6 +42,22 @@ export class ProtectedGitHubAnchor {
   }catch{
    return {ok:false,http_status:this.lastHttpStatus,reason:this.lastHttpStatus!==null&&this.lastHttpStatus!==200?'ANCHOR_HTTP_REFUSED':'ANCHOR_READ_OR_RULE_PIN_REFUSED'};
   }
+ }
+ async readBurn(expected){
+  need(expected&&Object.keys(expected).sort().join(',')==='context_sha256,key_sha256,leaf,message_sha256,tag_sha','HISTORICAL_BURN_FIELDS');
+  const e=JSON.parse(new TextDecoder().decode(canonical(expected)));
+  need(e.leaf===0&&hex64(e.key_sha256)&&hex64(e.context_sha256)&&hex64(e.message_sha256)&&/^[0-9a-f]{40}$/.test(e.tag_sha),'HISTORICAL_BURN_PARAMETERS');
+  need((await this.inspect()).ok,'HISTORICAL_BURN_RULES');
+  const tag=PREFIX+e.key_sha256+'-0000',ref='refs/tags/'+tag;
+  const reference=await this.request('/git/ref/tags/'+tag);
+  need(reference.ref===ref&&reference.object?.type==='tag'&&reference.object.sha===e.tag_sha,'HISTORICAL_BURN_REF');
+  const object=await this.request('/git/tags/'+e.tag_sha);
+  need(object.sha===e.tag_sha&&object.tag===tag&&object.object?.type==='commit'&&object.object.sha===this.configuration.genesis_commit&&typeof object.message==='string','HISTORICAL_BURN_TAG');
+  const r=JSON.parse(object.message);
+  need(Object.keys(r).sort().join(',')==='attempt_nonce,context_sha256,expires_at,issued_at,key_sha256,kind,leaf,message_sha256,schema'&&new TextDecoder().decode(canonical(r))===object.message,'HISTORICAL_BURN_CANONICAL');
+  need(r.schema==='arda.hss.leaf_burn.v1'&&r.kind==='registration'&&r.leaf===0&&r.key_sha256===e.key_sha256&&r.context_sha256===e.context_sha256&&r.message_sha256===e.message_sha256&&hex64(r.attempt_nonce),'HISTORICAL_BURN_BINDING');
+  need(Number.isSafeInteger(r.issued_at)&&Number.isSafeInteger(r.expires_at)&&r.issued_at>0&&r.expires_at>r.issued_at&&r.expires_at-r.issued_at<=86400,'HISTORICAL_BURN_WINDOW');
+  return {...r,ref,tag_sha:e.tag_sha};
  }
  async burn(record){
   need(record&&Object.keys(record).sort().join(',')==='attempt_nonce,context_sha256,expires_at,issued_at,key_sha256,kind,leaf,message_sha256','LEAF_BURN_FIELDS');

@@ -62,3 +62,16 @@ test('registration cache payload must match the signed message before any leaf b
  const signer=new GuardedHssSigner({storage:s.storage,engine:s.engine,anchor:s.anchor,clock:()=>1000,registrationPayload:payload});
  const r=await signer.sign(request());assert.equal(r.signature_created,false);assert.equal(s.signs,0);assert.equal(s.net.refs.size,0);assert.equal(s.snapshot().state,'ACTIVE');
 });
+test('historical registration marker is read with exact key, tag, context and message binding',async()=>{
+ const tag='56'.repeat(20),ref='refs/tags/arda-hss-leaf-'+key+'-0000';
+ const record={schema:'arda.hss.leaf_burn.v1',kind:'registration',key_sha256:key,leaf:0,context_sha256:'ab'.repeat(32),message_sha256:await sha(message),attempt_nonce:'cd'.repeat(32),issued_at:1000,expires_at:1100};
+ const methods=[];const anchor=new ProtectedGitHubAnchor(cfg,'fixture',async(url,options)=>{methods.push(options.method);const path=new URL(url).pathname;
+  if(path.endsWith('/rulesets/7'))return Response.json(rules);
+  if(path.endsWith('/git/ref/tags/arda-hss-leaf-'+key+'-0000'))return Response.json({ref,object:{type:'tag',sha:tag}});
+  return Response.json({sha:tag,tag:ref.slice(10),object:{type:'commit',sha:cfg.genesis_commit},message:new TextDecoder().decode(canonical(record))});
+ });
+ const expected={key_sha256:key,leaf:0,tag_sha:tag,context_sha256:record.context_sha256,message_sha256:record.message_sha256};
+ const receipt=await anchor.readBurn(expected);assert.equal(receipt.tag_sha,tag);assert.equal(receipt.ref,ref);assert.deepEqual(methods,['GET','GET','GET']);
+ await assert.rejects(anchor.readBurn({...expected,message_sha256:'00'.repeat(32)}));
+ await assert.rejects(anchor.readBurn({...expected,leaf:1}));
+});

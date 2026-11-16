@@ -59,3 +59,62 @@ test('uncertain atomic commit withholds output and quarantines without another b
  assert.equal(s.values.get('key').state,'QUARANTINED');assert.equal(s.values.has('registration'),true);
  assert.equal((await s.service.fetch(request())).status,409);assert.equal(s.burns,1);
 });
+async function orphan(){
+ const s=await setup();assert.equal((await s.service.fetch(request())).status,200);s.values.delete('registration');
+ const old=s.values.get('key'),generate=s.service.engine.generate.bind(s.service.engine);
+ s.service.engine.generate=async()=>{const k=await generate();k.publicKey[59]=99;return k;};
+ s.service.anchorFactory=configuration=>({configuration,async inspect(){return {ok:true,http_status:200,reason:'ANCHOR_READ_AND_RULE_PIN_VALID'};},async readBurn(e){return {...e,kind:'registration',issued_at:1000,expires_at:2000,ref:'refs/tags/arda-hss-leaf-'+e.key_sha256+'-0000'};}});
+ const input={action:'replace_orphaned_cloudflare_key',ceremony_sha256:config.ceremony_sha256,config_sha256:s.env.ARDA_CF_CONFIG_SHA256,expected_key_sha256:old.key_sha256,expected_next_leaf:1,old_ceremony:ceremony,prior_tag_sha:'56'.repeat(20)};
+ return {s,old:structuredClone(old),input};
+}
+function rotationRequest(input,token='aa'.repeat(32)){return new Request('https://example/v1/replace-orphaned-key',{method:'POST',headers:{'X-ARDA-Setup-Token':token,'Content-Type':'application/json'},body:new TextDecoder().decode(canonical(input))});}
+test('explicit orphan replacement archives original private bytes and never signs a leaf',async()=>{
+ const {s,old,input}=await orphan();const r=await s.service.fetch(rotationRequest(input));assert.equal(r.status,200,await r.clone().text());
+ const body=await r.json(),key=s.values.get('key'),archive=s.values.get('retired/'+old.key_sha256);
+ assert.equal(key.privateState[7],0);assert.notEqual(key.key_sha256,old.key_sha256);assert.equal(body.receipt.replacement_key_sha256,key.key_sha256);
+ assert.equal(archive.state,'RETIRED');assert.deepEqual(archive.original_state,old);assert.equal(s.burns,1);assert.equal(s.generations,2);assert.equal(s.values.has('registration'),false);
+ assert.equal(JSON.stringify(body).includes('privateState'),false);
+ const replay=await s.service.fetch(rotationRequest(input));assert.equal(replay.status,200);assert.deepEqual(await replay.json(),body);assert.equal(s.generations,2);
+});
+test('replacement refuses a completed registration without generating another key',async()=>{
+ const {s,input}=await orphan();s.values.set('registration',{payload:{}});
+ assert.equal((await s.service.fetch(rotationRequest(input))).status,409);assert.equal(s.generations,1);
+});
+test('replacement rejects wrong state pins, old ceremony and authentication before generation',async()=>{
+ for(const change of [{expected_key_sha256:'00'.repeat(32)},{expected_next_leaf:0},{config_sha256:'00'.repeat(32)},{old_ceremony:{...ceremony,nonce:'00'.repeat(32)}}]){
+  const {s,input}=await orphan();assert.notEqual((await s.service.fetch(rotationRequest({...input,...change}))).status,200);assert.equal(s.generations,1);
+ }
+ const {s,input}=await orphan();assert.equal((await s.service.fetch(rotationRequest(input,'bb'.repeat(32)))).status,401);assert.equal(s.generations,1);
+});
+test('replacement refuses quarantined or changed counters and an invalid marker',async()=>{
+ for(const fault of ['quarantined','advanced','marker']){const {s,input}=await orphan();const state=s.values.get('key');
+  if(fault==='quarantined')state.state='QUARANTINED';if(fault==='advanced')state.privateState[7]=2;if(fault==='marker')s.service.anchorFactory=()=>({async readBurn(){throw Error('invalid marker');}});
+  assert.equal((await s.service.fetch(rotationRequest(input))).status,409);assert.equal(s.generations,1);
+ }
+});
+test('replacement rejects expiry and preserves original state if generation crosses expiry',async()=>{
+ const a=await orphan();a.s.service.clock=()=>3000;assert.equal((await a.s.service.fetch(rotationRequest(a.input))).status,503);assert.equal(a.s.generations,1);
+ const {s,input,old}=await orphan(),generate=s.service.engine.generate.bind(s.service.engine);s.service.engine.generate=async()=>{const key=await generate();s.service.clock=()=>3000;return key;};
+ assert.equal((await s.service.fetch(rotationRequest(input))).status,409);assert.deepEqual(s.values.get('key'),old);assert.equal(s.values.has('retired/'+old.key_sha256),false);
+});
+test('lost replacement commit acknowledgement can be retried without another generated key',async()=>{
+ const {s,input,old}=await orphan(),put=s.storage.put.bind(s.storage);let lost=false;
+ s.storage.put=async(k,v)=>{await put(k,v);if(typeof k==='object'&&Object.keys(k).some(x=>x.startsWith('retired/'))&&!lost){lost=true;throw Error('lost acknowledgment');}};
+ assert.equal((await s.service.fetch(rotationRequest(input))).status,409);assert.equal(s.values.get('retired/'+old.key_sha256).state,'RETIRED');
+ assert.equal((await s.service.fetch(rotationRequest(input))).status,200);assert.equal(s.generations,2);assert.equal(s.burns,1);
+});
+test('fresh ceremony replaces an orphan whose original ceremony has expired',async()=>{
+ const {s,input}=await orphan();s.service.clock=()=>3000;
+ const freshCeremony={...ceremony,nonce:'ee'.repeat(32),issued_at:2900,expires_at:4000};
+ const fresh={...config,ceremony:freshCeremony,ceremony_sha256:await sha(canonical(freshCeremony))};
+ s.env.ARDA_CF_CONFIG_JSON=new TextDecoder().decode(canonical(fresh));s.env.ARDA_CF_CONFIG_SHA256=await sha(canonical(fresh));
+ const updated={...input,ceremony_sha256:fresh.ceremony_sha256,config_sha256:s.env.ARDA_CF_CONFIG_SHA256};
+ const r=await s.service.fetch(rotationRequest(updated));assert.equal(r.status,200);assert.equal(s.values.get('key').ceremony_sha256,fresh.ceremony_sha256);
+ assert.equal((await r.json()).receipt.old_ceremony_sha256,config.ceremony_sha256);
+});
+test('lost rotation acknowledgement remains recoverable by read-only status after expiry',async()=>{
+ const {s,input}=await orphan();const r=await s.service.fetch(rotationRequest(input));assert.equal(r.status,200);const first=await r.json();
+ s.service.clock=()=>3000;const status=await s.service.fetch(statusRequest());assert.equal(status.status,200);
+ const body=await status.json();assert.deepEqual(body.replacement_receipt,first.receipt);assert.equal(body.replacement_receipt_sha256,first.receipt_sha256);
+ assert.equal((await s.service.fetch(rotationRequest(input))).status,503);assert.equal(s.generations,2);assert.equal(s.burns,1);
+});
