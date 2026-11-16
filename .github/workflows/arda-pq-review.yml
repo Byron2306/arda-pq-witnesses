@@ -1,0 +1,15 @@
+name: ARDA ready-first PQ review witness
+on:
+  workflow_dispatch:
+    inputs:
+      session:
+        description: Unique 64-character lowercase hex inbox session
+        required: true
+        type: string
+permissions: {}
+jobs:
+  registration_only:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'true'
