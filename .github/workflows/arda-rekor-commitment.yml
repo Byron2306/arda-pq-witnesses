@@ -1,0 +1,67 @@
+name: ARDA Rekor commitment
+'on':
+  workflow_dispatch:
+    inputs:
+      certificate_sha256:
+        description: SHA-256 of the canonical ARDA certificate (public log submission)
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  sign-commitment:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository_id == '1458361210' &&
+      github.repository == 'Byron2306/arda-pq-witnesses' &&
+      github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: arda-rekor-signing
+    permissions:
+      id-token: write
+    steps:
+      - name: Materialize only the public commitment
+        shell: bash
+        env:
+          ARDA_CERTIFICATE_SHA256: ${{ inputs.certificate_sha256 }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          digest = os.environ["ARDA_CERTIFICATE_SHA256"]
+          if re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+              raise SystemExit("Expected 64 lowercase hex characters")
+          raw = json.dumps(
+              {"schema": "arda.pq.public_commitment.v1", "certificate_sha256": digest},
+              sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+          ).encode("ascii")
+          with Path("public-commitment.json").open("xb") as stream:
+              stream.write(raw)
+          PY
+
+      - name: Sign and submit the public commitment to Rekor v2
+        uses: sigstore/gh-action-sigstore-python@790bc6befb9d733738f18d8f895854b453640ec9 # v3.5.0
+        with:
+          inputs: public-commitment.json
+          staging: 'false'
+          rekor-version: '2'
+          verify: 'true'
+          verify-cert-identity: https://github.com/Byron2306/arda-pq-witnesses/.github/workflows/arda-rekor-commitment.yml@refs/heads/main
+          verify-oidc-issuer: https://token.actions.githubusercontent.com
+          upload-signing-artifacts: 'false'
+          release-signing-artifacts: 'false'
+
+      - name: Retain the commitment and Sigstore bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: arda-rekor-commitment
+          path: |
+            public-commitment.json
+            public-commitment.json.sigstore.json
+          if-no-files-found: error
+          retention-days: 7
