@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
@@ -9,6 +10,21 @@ from tools import run_gate3_d3282_vm as vm
 
 
 class Gate3VmLaunchTests(unittest.TestCase):
+    def test_executable_preserves_multicall_symlink_name(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            kmod = root / "kmod"
+            kmod.write_text("#!/bin/sh\ncase \"$0\" in */modprobe) exit 0;; esac\nexit 67\n")
+            kmod.chmod(0o755)
+            alias = root / "modprobe"
+            alias.symlink_to(kmod)
+            with patch.object(vm.shutil, "which", return_value=str(alias)):
+                path = vm.executable("modprobe")
+            run = subprocess.run([path, "-C", "/dev/null", "--show-depends", "virtio_blk"],
+                                 check=False, timeout=5)
+            self.assertEqual(run.returncode, 0)
+            self.assertEqual(path, alias)
+
     def test_qemu_has_no_host_mount_or_network_device(self):
         with TemporaryDirectory() as d:
             root = Path(d)
