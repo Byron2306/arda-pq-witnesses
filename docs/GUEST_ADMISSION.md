@@ -58,3 +58,39 @@ a live stateful signer. Before considering a real cutover, run the guest
 exercise with the actual guest adapter and a reviewed real-evidence path, and
 bind the resulting consumer and authority configuration into a new measured
 release. The original reviewed runtime and sealed generation remain untouched.
+
+## Opt-in kernel-adapter acceptance
+
+Inside a disposable x86-64 Linux VM such as the D3282 guest, build the
+fixtures as the normal user and run the read-only check:
+
+```bash
+python3 tools/build_native.py &&
+python3 -m tools.run_guest_kernel_admission --preflight
+```
+
+The guest needs cgroup v2, bpftool, fsverity, a filesystem supporting fs-verity
+for the fixture directory (default /var/tmp), and the reviewed release's
+proof_file_measurement.py. The check reports its exact default path. If a
+byte-identical copy is elsewhere, pass `--measurement-source /absolute/path` to
+both commands that invoke the runner. A different hash is refused. Build and
+run the Python interpreter with the same cryptography/PyYAML dependencies.
+
+When the preflight reports ready, execute **inside that VM only**:
+
+```bash
+sudo unshare --mount --propagation private -- +  python3 -m tools.run_guest_kernel_admission
+```
+
+Pass `--work-parent /absolute/guest/path` if /var/tmp is on a filesystem that
+cannot enable fs-verity. The runner uses a fresh bpffs in the private mount
+namespace and empty test cgroups. It creates disposable maps and an isolated
+measured ledger, uses the unmodified reviewed BpfProjectionAdapter, and reads
+back the actual map contents after publication and recovery. It does not
+open the production pins or database, load or attach an LSM program, or
+authorize a deployment. The stage transaction only seeds the fixture ledger.
+
+Expect 15 cases and `GATE_3_KERNEL_ADAPTER=PASS`. This is actual kernel-map,
+scope and fs-verity coverage, not attached LSM enforcement or a reboot test.
+The signatures and R13 capture use disposable fixtures bound to this boot ID,
+and the Rekor subprocess is stubbed just as in the file-backed suite.
