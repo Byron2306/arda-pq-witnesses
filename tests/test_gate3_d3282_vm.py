@@ -39,6 +39,43 @@ class Gate3VmLaunchTests(unittest.TestCase):
                          f"file={disk},format=raw,if=virtio")
         self.assertTrue(all(x not in command for x in ("-virtfs", "-fsdev", "-netdev")))
 
+    def test_missing_virtio_module_selects_pinned_kernel_nvme_support(self):
+        config = {"CONFIG_EXT4_FS=y", "CONFIG_FS_VERITY=y", "CONFIG_VIRTIO_PCI=y",
+                  "CONFIG_VIRTIO_BLK=m", "CONFIG_BLK_DEV_NVME=y"}
+
+        def missing(name):
+            raise FileNotFoundError(name)
+
+        storage, modules = vm.choose_storage(config, missing)
+        self.assertEqual(storage, "nvme")
+        self.assertEqual(modules, [])
+
+    def test_nvme_qemu_and_guest_agree_on_the_single_disposable_device(self):
+        command = vm.qemu_command("qemu", Path("/tmp/kernel"), Path("/tmp/init"),
+                                  Path("/tmp/fixture.ext4"), "kvm", "nvme")
+        cmdline = command[command.index("-append") + 1]
+        self.assertIn("nvme,drive=gate3_fixture,serial=ARDA_GATE3_FIXTURE", command)
+        self.assertEqual(command.count("-drive"), 1)
+        self.assertEqual(gate3_vm_init.disk_for_cmdline(cmdline), Path("/dev/nvme0n1"))
+        with self.assertRaises(ValueError):
+            gate3_vm_init.disk_for_cmdline(cmdline + " arda_gate3_disk=ide")
+
+    def test_ext4_is_required_regardless_of_the_disk_frontend(self):
+        with self.assertRaisesRegex(ValueError, "EXT4_FS"):
+            vm.choose_storage({"CONFIG_FS_VERITY=y", "CONFIG_BLK_DEV_NVME=y"}, lambda _: [])
+
+    def test_ide_is_a_fallback_and_mounts_only_the_fixture_disk(self):
+        config = {"CONFIG_FS_VERITY=y", "CONFIG_EXT4_FS=y", "CONFIG_ATA_PIIX=y",
+                  "CONFIG_BLK_DEV_SD=y"}
+        storage, modules = vm.choose_storage(config, lambda _: [])
+        self.assertEqual((storage, modules), ("ide", []))
+        cmd = vm.qemu_command("qemu", Path("/tmp/kernel"), Path("/tmp/init"),
+                              Path("/tmp/fixture.ext4"), "kvm", storage)
+        self.assertEqual(cmd[cmd.index("-machine") + 1], "pc")
+        self.assertEqual(cmd[cmd.index("-drive") + 1], "file=/tmp/fixture.ext4,format=raw,if=ide")
+        self.assertEqual(gate3_vm_init.disk_for_cmdline(cmd[cmd.index("-append") + 1]),
+                         Path("/dev/sda"))
+
     def test_host_verdict_requires_both_guest_markers_and_clean_qemu_exit(self):
         passed = ("GATE_3_KERNEL_ADAPTER=PASS tests=15\n"
                   "PRODUCTION_AUTHORIZED=FALSE\nINTERLOCK=KEEP_CLOSED\n"
