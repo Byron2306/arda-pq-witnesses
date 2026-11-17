@@ -27,11 +27,11 @@ from backend.services.projection_journal import PERMIT_DOMAIN
 
 class GuestAdmissionTests(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls, *, boot_id=None):
         from tools import guest_admission
 
         cls.gate = guest_admission
-        test_r13_quorum.BoundQuorumTests.setUpClass()
+        test_r13_quorum.BoundQuorumTests.setUpClass(boot_id=boot_id)
         cls.addClassCleanup(test_r13_quorum.BoundQuorumTests.tearDownClass)
 
     def setUp(self):
@@ -46,6 +46,7 @@ class GuestAdmissionTests(unittest.TestCase):
         self.plan = dict(action="activate", scope_id=11, scope_path="/sys/fs/cgroup/guest-arda",
                          prior_generation=13, node_id="guest",
                          **{k: self.expected[k] for k in ("generation", "manifest_id", "manifest_digest")})
+        self.prepare_backend()
         self.guest = self.open_guest()
         self.rekor = test_rekor_commitment.RekorCommitmentTests()
         self.addCleanup(self.rekor.doCleanups)
@@ -56,6 +57,9 @@ class GuestAdmissionTests(unittest.TestCase):
         mocked = patch.object(rekor, "subprocess", offline)
         mocked.start()
         self.addCleanup(mocked.stop)
+
+    def prepare_backend(self):
+        pass
 
     def open_guest(self):
         return self.gate.GuestAdmission(
@@ -165,8 +169,9 @@ class GuestAdmissionTests(unittest.TestCase):
         self.assertEqual(self.guest.active_generation(), 0)
 
     def test_valid_permit_for_wrong_scope_does_not_consume(self):
+        wrong_scope = self.plan["scope_id"] + 1
         with self.assertRaisesRegex(ValueError, "guest_selector_scope"):
-            self.apply(plan=dict(self.plan, scope_id=12), permit=self.permit(scope_id=12))
+            self.apply(plan=dict(self.plan, scope_id=wrong_scope), permit=self.permit(scope_id=wrong_scope))
         self.untouched()
 
     def test_rekor_refusal_and_unpinned_enrollment_do_not_consume_or_publish(self):
@@ -189,7 +194,11 @@ class GuestAdmissionTests(unittest.TestCase):
         self.untouched()
 
     def fork_and_crash(self, child):
-        process = multiprocessing.get_context("fork").Process(target=child)
+        def reopened_child():
+            self.guest = self.open_guest()
+            child()
+
+        process = multiprocessing.get_context("fork").Process(target=reopened_child)
         process.start()
         try:
             process.join(20)
