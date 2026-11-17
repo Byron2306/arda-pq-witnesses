@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Boot Gate 3 with D3282's pinned kernel and initramfs builder, unprivileged."""
 import argparse
+import gzip
 import hashlib
 import importlib.util
 import json
@@ -25,16 +26,25 @@ TEST_FIXTURES = (
 TOOLS = ("run_guest_kernel_admission.py", "guest_admission.py", "verify_rekor_commitment.py")
 EXPECTED = ("GATE_3_KERNEL_ADAPTER=PASS tests=15", "PRODUCTION_AUTHORIZED=FALSE",
             "INTERLOCK=KEEP_CLOSED", "GATE_3_VM_INIT=PASS")
+DISK_DRIVERS = {
+    "virtio": (("virtio_pci", "VIRTIO_PCI"), ("virtio_blk", "VIRTIO_BLK")),
+    "nvme": (("nvme", "BLK_DEV_NVME"),),
+    "ide": (("ata_piix", "ATA_PIIX"), ("sd_mod", "BLK_DEV_SD")),
+}
 
 
-def qemu_command(qemu, kernel, archive, disk, accel):
-    if accel not in {"kvm", "tcg"} or "," in str(disk):
-        raise ValueError("invalid QEMU scratch path or acceleration mode")
-    return [str(qemu), "-accel", accel, "-m", "1024", "-smp", "2", "-nodefaults",
+def qemu_command(qemu, kernel, archive, disk, accel, storage="virtio"):
+    if accel not in {"kvm", "tcg"} or storage not in DISK_DRIVERS or "," in str(disk):
+        raise ValueError("invalid QEMU scratch path, acceleration mode or storage frontend")
+    cmd = [str(qemu), "-accel", accel, "-machine", "q35" if storage == "nvme" else "pc",
+            "-m", "1024", "-smp", "2", "-nodefaults",
             "-display", "none", "-serial", "stdio", "-monitor", "none", "-nic", "none",
             "-no-reboot", "-kernel", str(kernel), "-initrd", str(archive),
-            "-append", "console=ttyS0 rdinit=/init panic=1 arda_gate3_vm=1",
-            "-drive", f"file={disk},format=raw,if=virtio"]
+            "-append", f"console=ttyS0 rdinit=/init panic=1 arda_gate3_vm=1 arda_gate3_disk={storage}"]
+    if storage == "nvme":
+        return cmd + ["-drive", f"file={disk},format=raw,if=none,id=gate3_fixture",
+                      "-device", "nvme,drive=gate3_fixture,serial=ARDA_GATE3_FIXTURE"]
+    return cmd + ["-drive", f"file={disk},format=raw,if={storage}"]
 
 
 def serial_passed(returncode, serial):
@@ -77,32 +87,64 @@ def module_paths(output):
     return paths
 
 
-def guest_modules(release):
+def choose_storage(config, resolve_modules, requested="auto"):
+    if config and "CONFIG_FS_VERITY=y" not in config:
+        raise ValueError("pinned kernel config lacks CONFIG_FS_VERITY=y")
+
+    def require(targets):
+        paths = []
+        for name, symbol in targets:
+            if f"CONFIG_{symbol}=y" in config:
+                continue
+            if config and f"CONFIG_{symbol}=m" not in config:
+                raise ValueError(f"CONFIG_{symbol} is disabled")
+            paths.extend(resolve_modules(name))
+        return paths
+
+    filesystem = [("ext4", "EXT4_FS")]
+    if "CONFIG_CRYPTO_SHA256=m" in config:
+        filesystem.append(("sha256_generic", "CRYPTO_SHA256"))
+    common = require(filesystem)
+    rejected = []
+    for storage in DISK_DRIVERS if requested == "auto" else (requested,):
+        try:
+            modules = require(DISK_DRIVERS[storage])
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            rejected.append(f"{storage}: {exc}")
+            continue
+        return storage, list(dict.fromkeys(modules + common))
+    raise ValueError("no scratch disk driver available for the pinned kernel (" +
+                     "; ".join(rejected) + ")")
+
+
+def guest_modules(release, requested="auto"):
     expected_root = (Path("/lib/modules") / release).resolve()
     config_path = Path("/boot") / f"config-{release}"
-    config = set(config_path.read_text().splitlines()) if config_path.is_file() else set()
-    if config and "CONFIG_FS_VERITY=y" not in config:
-        raise ValueError(f"pinned kernel config lacks CONFIG_FS_VERITY=y: {config_path}")
-    paths = {}
-    targets = [("virtio_pci", "VIRTIO_PCI"), ("virtio_blk", "VIRTIO_BLK"), ("ext4", "EXT4_FS")]
-    if "CONFIG_CRYPTO_SHA256=m" in config:
-        targets.append(("sha256_generic", "CRYPTO_SHA256"))
-    for name, symbol in targets:
-        if f"CONFIG_{symbol}=y" in config:
-            continue
-        if config and f"CONFIG_{symbol}=m" not in config:
-            raise ValueError(f"pinned kernel config lacks {symbol}: {config_path}")
+    proc_config = Path("/proc/config.gz")
+    config = set()
+    if config_path.is_file():
+        config = set(config_path.read_text().splitlines())
+    elif os.uname().release == release and proc_config.is_file():
+        with gzip.open(proc_config, "rt") as handle:
+            config = set(handle.read().splitlines())
+
+    def resolve(name):
         modprobe = executable("modprobe")
-        output = subprocess.check_output(
+        run = subprocess.run(
             [modprobe, "-C", "/dev/null", "--set-version", release, "--show-depends", name],
-            text=True, timeout=15,
+            capture_output=True, text=True, timeout=15, check=False,
         )
-        for path in module_paths(output):
+        if run.returncode or not run.stdout.strip():
+            raise ValueError(run.stderr.strip() or f"no dependency record for {name}")
+        paths = []
+        for path in module_paths(run.stdout):
             resolved = path.resolve(strict=True)
             if not resolved.is_relative_to(expected_root):
                 raise ValueError(f"module outside kernel release: {path}")
-            paths[resolved] = path
-    return list(paths.values())
+            paths.append(resolved)
+        return paths
+
+    return choose_storage(config, resolve, requested)
 
 
 def copy_python_dependencies(add):
@@ -122,7 +164,7 @@ def copy_python_dependencies(add):
             add(f"/gate3/pydeps/{source.name}", source)
 
 
-def build_initramfs(pack, stage, bpftool, measurement):
+def build_initramfs(pack, stage, bpftool, measurement, modules=()):
     builder = pack.Image()
     for name in ("/dev", "/proc", "/sys", "/run", "/tmp", "/etc", "/root", "/work"):
         builder.add(name, stat.S_IFDIR | (0o1777 if name == "/tmp" else 0o755))
@@ -145,7 +187,6 @@ def build_initramfs(pack, stage, bpftool, measurement):
         path = Path("/usr/bin/python3") if name == "python3" else executable(
             name, bpftool if name == "bpftool" else None)
         add(f"/usr/bin/{name}", path, True)
-    modules = guest_modules(pack.RELEASE_NAME)
     if modules:
         # kmod dispatches by argv[0], including when copied as insmod.
         add("/usr/bin/insmod", executable("insmod"), True)
@@ -187,6 +228,7 @@ def main():
     parser.add_argument("--measurement-source", type=Path, default=MEASUREMENT_SOURCE)
     parser.add_argument("--bpftool", type=Path)
     parser.add_argument("--tcg", action="store_true")
+    parser.add_argument("--storage", choices=("auto", *DISK_DRIVERS), default="auto")
     args = parser.parse_args()
     if os.geteuid() == 0 or platform.machine() != "x86_64":
         raise ValueError("run as the ordinary x86-64 Debian user, without sudo")
@@ -198,6 +240,8 @@ def main():
     qemu = executable("qemu-system-x86_64")
     mkfs = executable("mkfs.ext4")
     pack = load_d3282(args.d3282.resolve(strict=True))
+    storage, modules = guest_modules(pack.RELEASE_NAME, args.storage)
+    print(f"GATE_3_VM_STORAGE={storage}", flush=True)
     accel = "tcg" if args.tcg else "kvm"
     evidence = Path(mkdtemp(prefix="gate3-vm-evidence-", dir=Path.cwd()))
     serial = evidence / "guest.serial.log"
@@ -207,14 +251,14 @@ def main():
         kernel = stage / "kernel"
         kernel.write_bytes(pack.checked(Path("/boot") / f"vmlinuz-{pack.RELEASE_NAME}",
                                         pack.KERNEL_SHA, "KERNEL"))
-        archive = build_initramfs(pack, stage, args.bpftool, measurement)
+        archive = build_initramfs(pack, stage, args.bpftool, measurement, modules)
         disk = stage / "fixture.ext4"
         with disk.open("xb") as handle:
             handle.truncate(128 * 1024 * 1024)
         subprocess.run([mkfs, "-q", "-F", "-O", "verity", disk], check=True, timeout=30)
         with serial.open("xb") as log:
             try:
-                rc = subprocess.run(qemu_command(qemu, kernel, archive, disk, accel),
+                rc = subprocess.run(qemu_command(qemu, kernel, archive, disk, accel, storage),
                                     stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                                     timeout=480 if args.tcg else 180).returncode
             except subprocess.TimeoutExpired:
@@ -222,7 +266,7 @@ def main():
         raw = serial.read_bytes()
         decoded = raw.decode(errors="replace")
         passed = serial_passed(rc, decoded)
-        receipt = dict(passed=passed, qemu_exit=rc, accel=accel, serial_sha256=hashlib.sha256(raw).hexdigest(),
+        receipt = dict(passed=passed, qemu_exit=rc, accel=accel, storage=storage, serial_sha256=hashlib.sha256(raw).hexdigest(),
                        kernel_sha256=pack.KERNEL_SHA, initramfs_sha256=hashlib.sha256(archive.read_bytes()).hexdigest(),
                        production_authorized=False, interlock="KEEP_CLOSED")
     (evidence / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
