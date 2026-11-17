@@ -64,6 +64,24 @@ class Gate3VmLaunchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "EXT4_FS"):
             vm.choose_storage({"CONFIG_FS_VERITY=y", "CONFIG_BLK_DEV_NVME=y"}, lambda _: [])
 
+    def test_guest_uses_generic_crc32c_without_requiring_host_cpu_features(self):
+        config = {"CONFIG_FS_VERITY=y", "CONFIG_EXT4_FS=m", "CONFIG_VIRTIO_PCI=y",
+                  "CONFIG_VIRTIO_BLK=m"}
+        virtio = Path("/lib/modules/fixture/virtio_blk.ko.xz")
+        accelerated = Path("/lib/modules/fixture/arch/x86/crypto/crc32c-intel.ko.xz")
+        generic = Path("/lib/modules/fixture/kernel/crypto/crc32c_generic.ko.xz")
+        jbd2 = Path("/lib/modules/fixture/jbd2.ko.xz")
+        ext4 = Path("/lib/modules/fixture/ext4.ko.xz")
+        drivers = {"ext4": [accelerated, generic, jbd2, ext4], "virtio_blk": [virtio]}
+        self.assertEqual(vm.choose_storage(config, drivers.__getitem__),
+                         ("virtio", [virtio, generic, jbd2, ext4]))
+        drivers["ext4"].remove(generic)
+        self.assertEqual(vm.choose_storage(config, drivers.__getitem__),
+                         ("virtio", [virtio, accelerated, jbd2, ext4]))
+        self.assertEqual(vm.choose_storage(config | {"CONFIG_CRYPTO_CRC32C=y"},
+                                           drivers.__getitem__),
+                         ("virtio", [virtio, jbd2, ext4]))
+
     def test_ide_is_a_fallback_and_mounts_only_the_fixture_disk(self):
         config = {"CONFIG_FS_VERITY=y", "CONFIG_EXT4_FS=y", "CONFIG_ATA_PIIX=y",
                   "CONFIG_BLK_DEV_SD=y"}

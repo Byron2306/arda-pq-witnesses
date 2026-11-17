@@ -105,6 +105,14 @@ def choose_storage(config, resolve_modules, requested="auto"):
     if "CONFIG_CRYPTO_SHA256=m" in config:
         filesystem.append(("sha256_generic", "CRYPTO_SHA256"))
     common = require(filesystem)
+    # modprobe can list both providers for the crc32c soft dependency.
+    # Keep the portable provider and avoid a CPU-gated module in QEMU.
+    def module_name(path):
+        return path.name.split(".ko", 1)[0].replace("-", "_")
+
+    if "CONFIG_CRYPTO_CRC32C=y" in config or any(
+            module_name(path) == "crc32c_generic" for path in common):
+        common = [path for path in common if module_name(path) != "crc32c_intel"]
     rejected = []
     for storage in DISK_DRIVERS if requested == "auto" else (requested,):
         try:

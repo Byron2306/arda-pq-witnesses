@@ -128,6 +128,8 @@ The launcher picks VirtIO, NVMe, or IDE for the scratch image based on the
 pinned release's built-in drivers and available modules. It reports
 `GATE_3_VM_STORAGE` before boot. `--storage` can select a supported frontend
 explicitly, but does not waive the driver or fs-verity requirements.
+When the pinned kernel supplies generic CRC32C, the guest uses it instead of
+requiring the CPU-specific `crc32c-intel` accelerator to load.
 
 Expect `GATE_3_VM_ENTROPY=READY` before `GATE_3_KERNEL_ADAPTER=PASS tests=15`,
 and finally `GATE_3_VM_HOST_RECEIPT=PASS`. A build or QEMU boot alone does not
