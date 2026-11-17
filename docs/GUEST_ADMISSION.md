@@ -111,6 +111,8 @@ bootstrap. A fresh seed from the host OS RNG is copied into the private
 initramfs for that boot only. PID 1 removes the seed file, initializes the
 guest kernel RNG, and checks that `getrandom()` is ready before starting
 Python. The seed is not printed or retained in the receipt.
+The guest's admission subprocess uses the default OpenSSL provider without
+the optional legacy module. This does not change host OpenSSL settings.
 
 From this repository on the Debian host, **without sudo**:
 

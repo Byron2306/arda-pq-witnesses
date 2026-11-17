@@ -1,5 +1,6 @@
 from pathlib import Path
 import subprocess
+import sys
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
@@ -132,6 +133,28 @@ class Gate3VmLaunchTests(unittest.TestCase):
                 patch.object(gate3_vm_init, "command") as launch:
             self.assertEqual(gate3_vm_init.supervise(), 1)
         launch.assert_not_called()
+
+    def test_guest_crypto_works_with_no_legacy_provider_module(self):
+        code = """
+import os
+assert os.environ.get('CRYPTOGRAPHY_OPENSSL_NO_LEGACY') == '1'
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ed25519, padding, rsa
+
+message = b'Gate 3 disposable crypto probe'
+ed = ed25519.Ed25519PrivateKey.generate()
+ed.public_key().verify(ed.sign(message), message)
+key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+pad = padding.PKCS1v15()
+key.public_key().verify(key.sign(message, pad, hashes.SHA256()), message,
+                        pad, hashes.SHA256())
+"""
+        with TemporaryDirectory() as empty_modules:
+            result = subprocess.run([sys.executable, "-I", "-B", "-c", code],
+                                    env={**gate3_vm_init.GUEST_ENV,
+                                         "OPENSSL_MODULES": empty_modules},
+                                    capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_archive_packs_measurement_and_guest_tools_not_the_old_loader(self):
         files, data, seeds = {}, {}, []

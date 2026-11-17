@@ -11,8 +11,10 @@ import time
 
 GUEST_FLAG = "arda_gate3_vm=1"
 GUEST_ROOT = Path("/gate3")
+# The initramfs carries the default OpenSSL provider but no legacy module.
 GUEST_ENV = {"PATH": "/usr/bin:/usr/sbin:/bin:/sbin", "HOME": "/root",
-             "LANG": "C", "TMPDIR": "/tmp", "OPENSSL_CONF": "/dev/null"}
+             "LANG": "C", "TMPDIR": "/tmp", "OPENSSL_CONF": "/dev/null",
+             "CRYPTOGRAPHY_OPENSSL_NO_LEGACY": "1"}
 DISK_DEVICES = {"virtio": "/dev/vda", "nvme": "/dev/nvme0n1", "ide": "/dev/sda"}
 
 
