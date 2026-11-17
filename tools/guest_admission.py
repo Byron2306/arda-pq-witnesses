@@ -107,13 +107,17 @@ class GuestAdmission:
         self.clock = _Clock(clock)
         self.boot_id = boot_id
         self.release_key = release_key
+        self.scope_id, self.scope_path = scope_id, scope_path
         self.review = ReviewJournal(root / "review.sqlite3", backends=backends, clock=self.clock)
         self.journal = Journal(root / "projection", boot_id=lambda: self.boot_id, clock=self.clock)
-        self.selector = _FileSelector(self.journal, scope_id, scope_path, initial_generation)
+        self.selector = self._open_selector(initial_generation)
         self.coordinator = ProjectionCoordinator(self.journal, self.selector)
 
+    def _open_selector(self, initial_generation):
+        return _FileSelector(self.journal, self.scope_id, self.scope_path, initial_generation)
+
     def active_generation(self):
-        return self.selector.active(self.selector.scope_id)
+        return self.selector.active(self.scope_id)
 
     def activate(self, *, plan, certificate, enrollment, enrollment_sha256, expected, capture,
                  r13_gate, permit, bundle_path, trust_path, rekor_policy_path, rekor_policy_sha256):
@@ -124,7 +128,8 @@ class GuestAdmission:
         )
         validate_plan(plan)
         need(plan["action"] == "activate", "guest_activation_only")
-        self.selector.validate_scope(plan)
+        need(plan["scope_id"] == self.scope_id and plan["scope_path"] == self.scope_path,
+             "guest_selector_scope")
         need(sha(canonical(enrollment)) == enrollment_sha256, "guest_enrollment_pin")
         need(expected["boot_id"] == self.boot_id, "guest_expected_boot_binding")
         need(all(plan[k] == expected[k] and type(plan[k]) is type(expected[k])
