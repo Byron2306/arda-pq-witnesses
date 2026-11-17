@@ -118,5 +118,10 @@ package to a temporary directory and provide its binary with
 `--bpftool /absolute/path/to/bpftool`. No host package installation is
 required. Use `--tcg` if the ordinary user cannot open /dev/kvm.
 
+The launcher picks VirtIO, NVMe, or IDE for the scratch image based on the
+pinned release's built-in drivers and available modules. It reports
+`GATE_3_VM_STORAGE` before boot. `--storage` can select a supported frontend
+explicitly, but does not waive the driver or fs-verity requirements.
+
 Expect `GATE_3_VM_HOST_RECEIPT=PASS` after `GATE_3_KERNEL_ADAPTER=PASS tests=15`.
 A build or QEMU boot alone does not count as a pass.
