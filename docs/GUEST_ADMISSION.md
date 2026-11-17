@@ -94,3 +94,29 @@ Expect 15 cases and `GATE_3_KERNEL_ADAPTER=PASS`. This is actual kernel-map,
 scope and fs-verity coverage, not attached LSM enforcement or a reboot test.
 The signatures and R13 capture use disposable fixtures bound to this boot ID,
 and the Rekor subprocess is stubbed just as in the file-backed suite.
+
+### Boot from the archived D3282 setup
+
+D3282 launches short-lived initramfs boots, not an installed VM disk. This
+separate launcher reuses the verified packer's archive builder and pinned
+kernel. It does not run D3282's systemd test or load its LSM object. It adds
+the Gate 3 dependencies, a different init, and one newly created ext4 image
+with fs-verity enabled. QEMU gets no host disk, host shared filesystem,
+network adapter or monitor. The scratch image and initramfs are discarded
+after the run. The host retains the serial log and a JSON receipt.
+
+From this repository on the Debian host, **without sudo**:
+
+```bash
+/usr/bin/python3 tools/build_native.py &&
+/usr/bin/python3 -m tools.run_gate3_d3282_vm \
+  --d3282 "$HOME/ainur-restoration-v1/Valinor-D3.28.2"
+```
+
+If bpftool is not installed, download and extract the official Debian
+package to a temporary directory and provide its binary with
+`--bpftool /absolute/path/to/bpftool`. No host package installation is
+required. Use `--tcg` if the ordinary user cannot open /dev/kvm.
+
+Expect `GATE_3_VM_HOST_RECEIPT=PASS` after `GATE_3_KERNEL_ADAPTER=PASS tests=15`.
+A build or QEMU boot alone does not count as a pass.
