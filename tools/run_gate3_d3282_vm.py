@@ -25,7 +25,7 @@ TEST_FIXTURES = (
 )
 TOOLS = ("run_guest_kernel_admission.py", "guest_admission.py", "verify_rekor_commitment.py")
 EXPECTED = ("GATE_3_KERNEL_ADAPTER=PASS tests=15", "PRODUCTION_AUTHORIZED=FALSE",
-            "INTERLOCK=KEEP_CLOSED", "GATE_3_VM_INIT=PASS")
+            "INTERLOCK=KEEP_CLOSED", "GATE_3_VM_INIT=PASS", "GATE_3_VM_ENTROPY=READY")
 DISK_DRIVERS = {
     "virtio": (("virtio_pci", "VIRTIO_PCI"), ("virtio_blk", "VIRTIO_BLK")),
     "nvme": (("nvme", "BLK_DEV_NVME"),),
@@ -170,11 +170,17 @@ def build_initramfs(pack, stage, bpftool, measurement, modules=()):
         builder.add(name, stat.S_IFDIR | (0o1777 if name == "/tmp" else 0o755))
     builder.add("/dev/console", stat.S_IFCHR | 0o600, major=5, minor=1)
     builder.add("/dev/null", stat.S_IFCHR | 0o666, major=1, minor=3)
+    builder.add("/dev/random", stat.S_IFCHR | 0o600, major=1, minor=8)
     builder.data("/etc/passwd", b"root:x:0:0:root:/root:/bin/false\n")
     builder.data("/etc/group", b"root:x:0:\n")
     builder.data("/etc/os-release", b'ID=valinor\nPRETTY_NAME="Valinor Gate 3 disposable guest"\n')
     builder.data(str(MEASUREMENT_SOURCE), measurement)
-    builder.file("/init", ROOT / "tools/gate3_vm_init.py", 0o555)
+    bootstrap = stage / "gate3-init"
+    subprocess.run(["cc", "-static", "-O2", "-Wall", "-Wextra", "-Werror",
+                    ROOT / "tools/gate3_vm_bootstrap.c", "-o", bootstrap],
+                   check=True, timeout=60)
+    builder.file("/init", bootstrap, 0o555)
+    builder.file("/gate3/init.py", ROOT / "tools/gate3_vm_init.py", 0o555)
     libraries = {str(pack.INTERPRETER)}
 
     def add(dest, path, executable_mode=False):
@@ -218,7 +224,15 @@ def build_initramfs(pack, stage, bpftool, measurement, modules=()):
         if name.startswith("/lib/") and Path("/usr" + name).exists():
             builder.file("/usr" + name, name, 0o555)
     archive = stage / "gate3.cpio.gz"
-    builder.save(archive)
+    seed_path = stage / "boot.seed"
+    fd = os.open(seed_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as seed:
+            seed.write(os.urandom(32))
+        builder.file("/gate3/boot.seed", seed_path, 0o400)
+        builder.save(archive)
+    finally:
+        seed_path.unlink()
     return archive
 
 

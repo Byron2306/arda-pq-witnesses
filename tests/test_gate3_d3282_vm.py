@@ -79,13 +79,14 @@ class Gate3VmLaunchTests(unittest.TestCase):
     def test_host_verdict_requires_both_guest_markers_and_clean_qemu_exit(self):
         passed = ("GATE_3_KERNEL_ADAPTER=PASS tests=15\n"
                   "PRODUCTION_AUTHORIZED=FALSE\nINTERLOCK=KEEP_CLOSED\n"
-                  "GATE_3_VM_INIT=PASS\n")
+                  "GATE_3_VM_INIT=PASS\nGATE_3_VM_ENTROPY=READY\n")
         self.assertTrue(vm.serial_passed(0, passed))
         self.assertFalse(vm.serial_passed(124, passed))
         self.assertFalse(vm.serial_passed(0, passed.replace("tests=15", "tests=1")))
         self.assertFalse(vm.serial_passed(0, passed + "GATE_3_VM_INIT=FAIL\n"))
         self.assertFalse(vm.serial_passed(0, passed + "[   27.03] Kernel panic - not syncing\n"))
         self.assertFalse(vm.serial_passed(0, passed.replace("GATE_3_VM_INIT=PASS\n", "")))
+        self.assertFalse(vm.serial_passed(0, passed.replace("GATE_3_VM_ENTROPY=READY\n", "")))
 
     def test_modprobe_output_never_executes_install_rules(self):
         self.assertEqual(vm.module_paths("builtin virtio\ninsmod /lib/modules/a.ko\n"),
@@ -100,7 +101,7 @@ class Gate3VmLaunchTests(unittest.TestCase):
         launch.assert_not_called()
 
     def test_archive_packs_measurement_and_guest_tools_not_the_old_loader(self):
-        files, data = {}, {}
+        files, data, seeds = {}, {}, []
 
         class Recorder:
             def add(self, *args, **kwargs):
@@ -108,6 +109,8 @@ class Gate3VmLaunchTests(unittest.TestCase):
 
             def file(self, name, path, mode=None):
                 files[name] = (path, mode)
+                if name == "/gate3/boot.seed":
+                    seeds.append(path.read_bytes())
 
             def data(self, name, raw):
                 data[name] = raw
@@ -124,8 +127,18 @@ class Gate3VmLaunchTests(unittest.TestCase):
                 patch.object(vm, "copy_python_dependencies"):
             archive = vm.build_initramfs(pack, Path(d), None, b"pinned fixture")
             self.assertEqual(archive.read_bytes(), b"test archive")
+            init_path, _ = files["/init"]
+            self.assertEqual(init_path.read_bytes()[:4], b"\x7fELF")
+            host_run = subprocess.run([init_path], capture_output=True, timeout=5)
+            self.assertNotEqual(host_run.returncode, 0)
+            self.assertIn(b"guest PID 1 required", host_run.stderr)
+            self.assertFalse((Path(d) / "boot.seed").exists())
+            vm.build_initramfs(pack, Path(d), None, b"pinned fixture")
         self.assertEqual(data[str(vm.MEASUREMENT_SOURCE)], b"pinned fixture")
-        self.assertEqual(files["/init"][0].name, "gate3_vm_init.py")
+        self.assertEqual(files["/gate3/init.py"][0].name, "gate3_vm_init.py")
+        self.assertEqual(files["/gate3/boot.seed"][1], 0o400)
+        self.assertEqual([len(seed) for seed in seeds], [32, 32])
+        self.assertNotEqual(*seeds)
         self.assertIn("/usr/bin/bpftool", files)
         self.assertIn("/gate3/tools/run_guest_kernel_admission.py", files)
         self.assertNotIn("/d3282/loader", files)

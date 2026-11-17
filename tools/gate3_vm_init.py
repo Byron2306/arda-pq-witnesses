@@ -71,7 +71,7 @@ def supervise():
         try:
             subprocess.run(
                 ["/usr/bin/unshare", "--mount", "--propagation", "private", "--",
-                 "/usr/bin/python3", "-I", "-B", "/init", "run"],
+                 "/usr/bin/python3", "-I", "-B", "/gate3/init.py", "run"],
                 timeout=360, check=True, env=GUEST_ENV, cwd=GUEST_ROOT,
             )
         finally:

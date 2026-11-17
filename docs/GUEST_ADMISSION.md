@@ -105,6 +105,12 @@ with fs-verity enabled. QEMU gets no host disk, host shared filesystem,
 network adapter or monitor. The scratch image and initramfs are discarded
 after the run. The host retains the serial log and a JSON receipt.
 
+The launcher uses `cc` and the static C library to build a small PID 1
+bootstrap. A fresh seed from the host OS RNG is copied into the private
+initramfs for that boot only. PID 1 removes the seed file, initializes the
+guest kernel RNG, and checks that `getrandom()` is ready before starting
+Python. The seed is not printed or retained in the receipt.
+
 From this repository on the Debian host, **without sudo**:
 
 ```bash
@@ -123,5 +129,6 @@ pinned release's built-in drivers and available modules. It reports
 `GATE_3_VM_STORAGE` before boot. `--storage` can select a supported frontend
 explicitly, but does not waive the driver or fs-verity requirements.
 
-Expect `GATE_3_VM_HOST_RECEIPT=PASS` after `GATE_3_KERNEL_ADAPTER=PASS tests=15`.
-A build or QEMU boot alone does not count as a pass.
+Expect `GATE_3_VM_ENTROPY=READY` before `GATE_3_KERNEL_ADAPTER=PASS tests=15`,
+and finally `GATE_3_VM_HOST_RECEIPT=PASS`. A build or QEMU boot alone does not
+count as a pass.
