@@ -58,7 +58,8 @@ def load_d3282(directory):
 
 def executable(name, override=None):
     candidate = override or shutil.which(name) or Path("/usr/sbin") / name
-    path = Path(candidate).resolve(strict=True)
+    # Preserve argv[0] for multicall binaries such as modprobe -> kmod.
+    path = Path(candidate).absolute()
     if not path.is_file() or not os.access(path, os.X_OK):
         raise ValueError(f"not an executable: {path}")
     return path
