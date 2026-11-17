@@ -101,7 +101,8 @@ D3282 launches short-lived initramfs boots, not an installed VM disk. This
 separate launcher reuses the verified packer's archive builder and pinned
 kernel. It does not run D3282's systemd test or load its LSM object. It adds
 the Gate 3 dependencies, a different init, and one newly created ext4 image
-with fs-verity enabled. QEMU gets no host disk, host shared filesystem,
+with fs-verity enabled and 4096-byte filesystem blocks to match the
+admission runner's fs-verity Merkle block size. QEMU gets no host disk, host shared filesystem,
 network adapter or monitor. The scratch image and initramfs are discarded
 after the run. The host retains the serial log and a JSON receipt.
 

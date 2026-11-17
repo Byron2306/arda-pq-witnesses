@@ -39,6 +39,21 @@ class Gate3VmLaunchTests(unittest.TestCase):
                          f"file={disk},format=raw,if=virtio")
         self.assertTrue(all(x not in command for x in ("-virtfs", "-fsdev", "-netdev")))
 
+    def test_format_pins_ext4_block_size_to_the_verity_merkle_block_size(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            mkfs = root / "mkfs.ext4"
+            mkfs.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$0.args"\n')
+            mkfs.chmod(0o755)
+            disk = root / "fixture.ext4"
+            vm.format_fixture_disk(mkfs, disk)
+            args = (root / "mkfs.ext4.args").read_text().splitlines()
+            self.assertEqual(disk.stat().st_size, 128 * 1024 * 1024)
+            self.assertIn("-b", args)
+            self.assertEqual(args[args.index("-b") + 1], "4096")
+            self.assertEqual(args[args.index("-O") + 1], "verity")
+            self.assertEqual(args[-1], str(disk))
+
     def test_missing_virtio_module_selects_pinned_kernel_nvme_support(self):
         config = {"CONFIG_EXT4_FS=y", "CONFIG_FS_VERITY=y", "CONFIG_VIRTIO_PCI=y",
                   "CONFIG_VIRTIO_BLK=m", "CONFIG_BLK_DEV_NVME=y"}

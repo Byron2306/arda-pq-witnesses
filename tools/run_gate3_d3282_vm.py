@@ -244,6 +244,15 @@ def build_initramfs(pack, stage, bpftool, measurement, modules=()):
     return archive
 
 
+def format_fixture_disk(mkfs, disk):
+    with disk.open("xb") as handle:
+        handle.truncate(128 * 1024 * 1024)
+    # Small ext4 images can default to 1 KiB blocks. The admission runner's
+    # fsverity enable uses 4 KiB Merkle blocks, capped by the ext4 block size.
+    subprocess.run([mkfs, "-q", "-F", "-b", "4096", "-O", "verity", disk],
+                   check=True, timeout=30)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--d3282", type=Path, required=True)
@@ -275,9 +284,7 @@ def main():
                                         pack.KERNEL_SHA, "KERNEL"))
         archive = build_initramfs(pack, stage, args.bpftool, measurement, modules)
         disk = stage / "fixture.ext4"
-        with disk.open("xb") as handle:
-            handle.truncate(128 * 1024 * 1024)
-        subprocess.run([mkfs, "-q", "-F", "-O", "verity", disk], check=True, timeout=30)
+        format_fixture_disk(mkfs, disk)
         with serial.open("xb") as log:
             try:
                 rc = subprocess.run(qemu_command(qemu, kernel, archive, disk, accel, storage),
