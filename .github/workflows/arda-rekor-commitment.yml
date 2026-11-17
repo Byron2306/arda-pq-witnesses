@@ -45,16 +45,69 @@ jobs:
           PY
 
       - name: Sign and submit the public commitment to Rekor v2
-        uses: sigstore/gh-action-sigstore-python@790bc6befb9d733738f18d8f895854b453640ec9 # v3.5.0
-        with:
-          inputs: public-commitment.json
-          staging: 'false'
-          rekor-version: '2'
-          verify: 'true'
-          verify-cert-identity: https://github.com/Byron2306/arda-pq-witnesses/.github/workflows/arda-rekor-commitment.yml@refs/heads/main
-          verify-oidc-issuer: https://token.actions.githubusercontent.com
-          upload-signing-artifacts: 'false'
-          release-signing-artifacts: 'false'
+        shell: bash
+        env:
+          ARDA_SIGSTORE_IDENTITY: https://github.com/Byron2306/arda-pq-witnesses/.github/workflows/arda-rekor-commitment.yml@refs/heads/main
+          ARDA_SIGSTORE_ISSUER: https://token.actions.githubusercontent.com
+        run: |
+          work="$(mktemp -d "$RUNNER_TEMP/arda-rekor.XXXXXXXX")"
+          trap 'rm -rf -- "$work"' EXIT
+          python3 -m venv "$work/venv"
+          py="$work/venv/bin/python"
+
+          # Keep the previous pinned action's Sigstore and dependency lock.
+          curl --fail --silent --show-error --location \
+            --proto '=https' --proto-redir '=https' --max-time 45 \
+            --output "$work/requirements.txt" \
+            https://raw.githubusercontent.com/sigstore/gh-action-sigstore-python/790bc6befb9d733738f18d8f895854b453640ec9/requirements/main.txt
+          printf '%s  %s\n' 904c543b19fb1c46f5a614e355b47842e17fc74fdeaa5bcf8f5de4439cdedf8c \
+            "$work/requirements.txt" | sha256sum --check --status
+          "$py" -I -m pip --isolated install --disable-pip-version-check \
+            --require-hashes --only-binary=:all: -r "$work/requirements.txt"
+
+          "$py" -I - "$work" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          from sigstore._utils import read_embedded
+          from tuf.ngclient import Updater
+
+          work = Path(sys.argv[1])
+          metadata, targets = work / "metadata", work / "targets"
+          metadata.mkdir()
+          targets.mkdir()
+          repo = "https://tuf-repo-cdn.sigstore.dev"
+          updater = Updater(
+              metadata_dir=str(metadata), metadata_base_url=repo,
+              target_dir=str(targets), target_base_url=repo + "/targets/",
+              bootstrap=read_embedded("root.json", repo),
+          )
+          updater.refresh()
+
+          def read_target(name):
+              info = updater.get_targetinfo(name)
+              if info is None:
+                  raise SystemExit(f"Sigstore TUF target missing: {name}")
+              return json.loads(Path(updater.download_target(info)).read_bytes())
+
+          client_trust = {
+              "mediaType": "application/vnd.dev.sigstore.clienttrustconfig.v0.1+json",
+              "trustedRoot": read_target("trusted_root.json"),
+              "signingConfig": read_target("signing_config_rekor_v2.v0.2.json"),
+          }
+          (work / "client-trust.json").write_text(json.dumps(client_trust), encoding="utf-8")
+          PY
+
+          : "${ACTIONS_ID_TOKEN_REQUEST_URL:?GitHub OIDC is unavailable}"
+          : "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:?GitHub OIDC is unavailable}"
+          "$py" -I -m sigstore --trust-config "$work/client-trust.json" sign \
+            --rekor-version 2 \
+            --bundle public-commitment.json.sigstore.json public-commitment.json
+          "$py" -I -m sigstore --trust-config "$work/client-trust.json" verify identity \
+            --offline --cert-identity "$ARDA_SIGSTORE_IDENTITY" \
+            --cert-oidc-issuer "$ARDA_SIGSTORE_ISSUER" \
+            --bundle public-commitment.json.sigstore.json public-commitment.json
 
       - name: Retain the commitment and Sigstore bundle
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

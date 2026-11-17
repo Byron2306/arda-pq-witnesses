@@ -14,6 +14,14 @@ reconstructs the 129-byte `arda.pq.public_commitment.v1` JSON and submits its
 signature and signing evidence to the public Sigstore instance using Rekor v2.
 The run artifact contains the commitment and its Sigstore bundle.
 
+The signer verifies Sigstore production TUF metadata against the bootstrap
+root embedded in the locked Sigstore distribution. It loads both
+`trusted_root.json` and the explicit `signing_config_rekor_v2.v0.2.json`
+target. The default signing config is insufficient when it only lists v1.
+The workflow requires v2 and verifies the resulting bundle offline against
+the workflow identity and issuer before upload. If the v2 target is missing
+or rejected, it stops instead of falling back to v1 or a hard-coded shard.
+
 Do not dispatch with any real digest until public logging has been approved.
 Dispatch inputs, the signing identity, and signature metadata can be public.
 Use a disposable synthetic certificate for a first operational check if
