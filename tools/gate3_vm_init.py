@@ -13,6 +13,7 @@ GUEST_FLAG = "arda_gate3_vm=1"
 GUEST_ROOT = Path("/gate3")
 GUEST_ENV = {"PATH": "/usr/bin:/usr/sbin:/bin:/sbin", "HOME": "/root",
              "LANG": "C", "TMPDIR": "/tmp", "OPENSSL_CONF": "/dev/null"}
+DISK_DEVICES = {"virtio": "/dev/vda", "nvme": "/dev/nvme0n1", "ide": "/dev/sda"}
 
 
 def command(*argv):
@@ -21,6 +22,14 @@ def command(*argv):
 
 def guest_flag():
     return GUEST_FLAG in Path("/proc/cmdline").read_text().split()
+
+
+def disk_for_cmdline(cmdline):
+    prefix = "arda_gate3_disk="
+    choices = [part.removeprefix(prefix) for part in cmdline.split() if part.startswith(prefix)]
+    if len(choices) != 1 or choices[0] not in DISK_DEVICES:
+        raise ValueError("missing or invalid disposable disk choice")
+    return Path(DISK_DEVICES[choices[0]])
 
 
 def run_admission():
@@ -50,7 +59,7 @@ def supervise():
         command("/usr/bin/systemd-detect-virt", "--vm")
         for module in (GUEST_ROOT / "modules").read_text().splitlines():
             command("/usr/bin/insmod", module)
-        disk = Path("/dev/vda")
+        disk = disk_for_cmdline(Path("/proc/cmdline").read_text())
         for _ in range(20):
             if disk.exists():
                 break
