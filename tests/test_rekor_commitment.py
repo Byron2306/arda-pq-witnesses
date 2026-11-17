@@ -1,9 +1,10 @@
-"""Offline tests. The subprocess boundary is mocked, never the trust decision."""
+"""Offline coverage with replacements for the external Sigstore and TUF boundaries."""
 import base64
 import copy
 import json
 import os
 from pathlib import Path
+from types import ModuleType
 import subprocess
 import sys
 import tempfile
@@ -176,21 +177,25 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(list(inputs), ["certificate_sha256"])
         self.assertEqual(self.workflow["permissions"], {})
         self.assertEqual(self.job["permissions"], {"id-token": "write"})
-        self.assertIn("github.ref_protected", self.job["if"])
-        self.assertIn("refs/heads/main", self.job["if"])
-        self.assertIn("1458361210", self.job["if"])
+        self.assertEqual(" ".join(self.job["if"].split()),
+                         "github.event_name == 'workflow_dispatch' && "
+                         "github.repository_id == '1458361210' && "
+                         "github.repository == 'Byron2306/arda-pq-witnesses' && "
+                         "github.ref == 'refs/heads/main' && github.ref_protected")
         self.assertEqual(self.job["environment"], "arda-rekor-signing")
-        self.assertEqual(self.sign["with"]["inputs"], "public-commitment.json")
         from tools import verify_rekor_commitment as verify
 
-        self.assertEqual(self.sign["with"]["verify-cert-identity"], verify.IDENTITY)
-        self.assertEqual(self.sign["with"]["verify-oidc-issuer"], verify.ISSUER)
-        self.assertEqual(self.sign["with"]["rekor-version"], "2")
-        self.assertEqual(self.sign["with"]["release-signing-artifacts"], "false")
+        self.assertEqual(self.sign["env"]["ARDA_SIGSTORE_IDENTITY"], verify.IDENTITY)
+        self.assertEqual(self.sign["env"]["ARDA_SIGSTORE_ISSUER"], verify.ISSUER)
+        self.assertIn("--rekor-version 2", self.sign["run"])
+        self.assertIn("--offline", self.sign["run"])
+        self.assertEqual(self.sign["run"].count('--trust-config "$work/client-trust.json"'), 2)
+        self.assertIn("--require-hashes", self.sign["run"])
         self.assertEqual(self.upload["with"]["path"].splitlines(),
                          ["public-commitment.json", "public-commitment.json.sigstore.json"])
-        for action in (self.sign, self.upload):
-            self.assertRegex(action["uses"], r"@[0-9a-f]{40}$")
+        self.assertEqual([step["uses"] for step in self.job["steps"] if "uses" in step],
+                         [self.upload["uses"]])
+        self.assertRegex(self.upload["uses"], r"^actions/upload-artifact@[0-9a-f]{40}$")
         self.assertNotIn("${{", self.materialize["run"])
 
     def test_workflow_materializes_exact_synthetic_bytes_locally(self):
@@ -201,6 +206,72 @@ class WorkflowTests(unittest.TestCase):
             raw = (Path(work) / "public-commitment.json").read_bytes()
         self.assertEqual(len(raw), 129)
         self.assertEqual(sha(raw), "f2e5713d66042c24b2273eb5ed0f2d6a5625daf492cb34f1041dd960175d3cb7")
+
+    def test_signing_trust_uses_authenticated_v2_target_instead_of_default(self):
+        root = {"mediaType": "application/vnd.dev.sigstore.trustedroot.v0.1+json"}
+        v2 = {"mediaType": "application/vnd.dev.sigstore.signingconfig.v0.2+json",
+              "rekorTlogUrls": [{"url": "https://v2.example.invalid", "majorApiVersion": 2}]}
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            self.build_signing_trust(work, {"trusted_root.json": root,
+                                            "signing_config_rekor_v2.v0.2.json": v2})
+            config = json.loads((work / "client-trust.json").read_text())
+        self.assertEqual(config, {
+            "mediaType": "application/vnd.dev.sigstore.clienttrustconfig.v0.1+json",
+            "trustedRoot": root, "signingConfig": v2,
+        })
+
+    def test_missing_or_rejected_tuf_target_leaves_no_signing_trust(self):
+        for targets, error, refusal in (
+            ({"trusted_root.json": {}}, SystemExit, "TUF target missing"),
+            ({"trusted_root.json": {}, "signing_config_rekor_v2.v0.2.json": None},
+             ValueError, "TUF target rejected"),
+        ):
+            with self.subTest(refusal=refusal), tempfile.TemporaryDirectory() as directory:
+                work = Path(directory)
+                with self.assertRaisesRegex(error, refusal):
+                    self.build_signing_trust(work, targets)
+                self.assertFalse((work / "client-trust.json").exists())
+
+    def build_signing_trust(self, work, targets):
+        # Run the actual inline builder. Replace the remote TUF boundary only.
+        script = self.sign.get("run", "")
+        marker = "<<'PY'\n"
+        self.assertIn(marker, script, "Signing must build trust from the explicit v2 TUF target")
+        builder = script.split(marker, 1)[1].split("\nPY\n", 1)[0]
+
+        class Updater:
+            def __init__(_, **kwargs):
+                self.assertEqual(kwargs["metadata_base_url"], "https://tuf-repo-cdn.sigstore.dev")
+                self.assertEqual(kwargs["target_base_url"], "https://tuf-repo-cdn.sigstore.dev/targets/")
+                self.assertEqual(kwargs["bootstrap"], b"bundled-root")
+                self.refreshed = False
+
+            def refresh(_):
+                self.refreshed = True
+
+            def get_targetinfo(_, name):
+                self.assertTrue(self.refreshed)
+                return name if name in targets else None
+
+            def download_target(_, target):
+                if targets[target] is None:
+                    raise ValueError("TUF target rejected")
+                path = work / target
+                path.write_text(json.dumps(targets[target]))
+                return str(path)
+
+        def read_embedded(name, url):
+            self.assertEqual((name, url), ("root.json", "https://tuf-repo-cdn.sigstore.dev"))
+            return b"bundled-root"
+
+        tuf = ModuleType("tuf.ngclient")
+        tuf.Updater = Updater
+        utils = ModuleType("sigstore._utils")
+        utils.read_embedded = read_embedded
+        with patch.dict(sys.modules, {"tuf.ngclient": tuf, "sigstore._utils": utils}), \
+                patch.object(sys, "argv", ["-", str(work)]):
+            exec(compile(builder, "<signing trust workflow>", "exec"), {})
 
     def test_workflow_rejects_malformed_digest_without_writing(self):
         for digest in ("A" * 64, "a" * 63, "a" * 64 + "\n"):
