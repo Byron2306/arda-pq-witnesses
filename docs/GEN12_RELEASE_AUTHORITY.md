@@ -54,16 +54,41 @@ separation from a GitHub administrator.
 
 ## Load the reviewed request and issue the detached signature
 
-Use the existing local `arda-gen12-continuity-signing-request.json`.
-The encoder checks the exact reviewed Gen12 payload, ignores the legacy key
-metadata (it is not part of the payload), and prints the packed template.
-Pipe it directly to the signing environment from an authenticated route with
-permission to modify its secrets. Do not paste it into workflow dispatch inputs.
+The signer now accepts only the **Gen12 pinned-link retry** template. The first
+coordinated boot loaded and attached the expected BPF object, but the installed
+bpftool reported a failure exit after printing the pinned link correctly.
+The shared kernel readback fixes both the loader and downstream R13 observer.
+The original release and deployed legacy runtime must not be changed. The
+enrollment key is carried forward as-is, and enrollment should stay disabled.
+
+Create the new release and the unsigned request separately using the verified
+first envelope (`deployment.gen12.signed.json`) and the reviewed, patched
+`arda-gate3-kernel` checkout. The preparation tool pins the first envelope's
+bytes, the three repaired source files, and the resulting template. It copies
+the 564 release-local files to their new signed paths, verifies the five
+unchanged external paths, and does not create a live systemd override.
+
+```bash
+repo="$HOME/GitHub/EdgeK-BEAST/arda-gate3-kernel"
+umask 077
+sudo /usr/bin/python3 -I -B tools/prepare_gen12_link_retry.py \
+  --baseline-envelope "$HOME/deployment.gen12.signed.json" \
+  stage-release --review-runtime "$repo/reviewed-runtime"
+/usr/bin/python3 -I -B tools/prepare_gen12_link_retry.py \
+  --baseline-envelope "$HOME/deployment.gen12.signed.json" request \
+  > "$HOME/arda-gen12-link-retry-request.json"
+```
+
+Pin `ARDA_RELEASE_APPROVED_COMMIT` to the new reviewed main commit before
+re-enabling signing. The encoder checks the exact revised Gen12 payload and
+prints the packed template. Pipe it directly to the signing environment from
+an authenticated route with permission to modify its secrets. Do not paste it
+into workflow dispatch inputs.
 
 ```bash
 set -o pipefail
 python3 -I -B tools/gen12_release_authority.py encode-template \
-  --request /path/to/arda-gen12-continuity-signing-request.json |
+  --request "$HOME/arda-gen12-link-retry-request.json" |
   gh secret set ARDA_GEN12_RELEASE_TEMPLATE_ZLIB_B64 \
     --repo Byron2306/arda-pq-witnesses --env arda-release-authority
 ```
@@ -75,18 +100,18 @@ envelope locally against the independently reviewed public-key pin.
 
 ```bash
 python3 -I -B tools/gen12_release_authority.py assemble \
-  --request /path/to/arda-gen12-continuity-signing-request.json \
+  --request "$HOME/arda-gen12-link-retry-request.json" \
   --receipt /path/to/gen12-continuity.detached.json \
   --public-key /path/to/gen12-release-authority.public.pem \
   --public-key-sha256 "$APPROVED_RELEASE_PEM_SHA256" \
-  --output ./deployment.gen12.signed.json
+  --output ./deployment.gen12-link-r1.signed.json
 ```
 
 This command verifies the complete signature and validity window, writes a new
-file without overwriting an existing one, and does not install anything. Re-run
-the live Gen12 continuity review and the existing offline deployment-envelope
-checker before the coordinated-loader cold boot. Review the new public anchor
-as first live provisioning. Boot the coordinated runtime on Gen12 and capture
+file without overwriting an existing one, and does not install anything. Confirm
+the live Gen12 continuity readback and use the coordinated loader deployment
+verifier on this complete staged release before the cold boot. Use the already
+reviewed public anchor. Boot the coordinated runtime on Gen12 and capture
 fresh R13 and Ring-0 evidence before preparing any Gen14 production admission.
 
 ## Offline tests
