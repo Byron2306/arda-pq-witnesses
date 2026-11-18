@@ -76,5 +76,22 @@ class RetryTests(unittest.TestCase):
                 retry.verified_copy(symlink, retry.sha(source.read_bytes()), root_owned=False)
 
 
+    def test_empty_regular_artifact_is_accepted_only_for_empty_digest(self):
+        with TemporaryDirectory() as tmp:
+            parent = Path(tmp)
+            source = parent / "__init__.py"
+            target = parent / "copied" / "__init__.py"
+            source.touch()
+            retry.verified_copy(source, retry.EMPTY_SHA256, target=target, root_owned=False)
+            self.assertEqual(target.read_bytes(), b"")
+            retry.verified_copy(target, retry.EMPTY_SHA256, root_owned=False)
+            with self.assertRaisesRegex(ValueError, "unprotected input"):
+                retry.verified_copy(source, retry.sha(b"not empty"), root_owned=False)
+            with self.assertRaisesRegex(ValueError, "unprotected input"):
+                retry.baseline(source)
+            source.write_bytes(b"unexpected bytes")
+            with self.assertRaisesRegex(ValueError, "artifact SHA-256 mismatch"):
+                retry.verified_copy(source, retry.EMPTY_SHA256, root_owned=False)
+
 if __name__ == "__main__":
     unittest.main()
