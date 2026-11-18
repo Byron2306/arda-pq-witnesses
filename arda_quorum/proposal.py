@@ -2,7 +2,7 @@
 import secrets
 from .quorum import canonical,strict_load,sha,need,hex64,enrollment
 
-REVIEWED_REQUEST_SHA256='2965b8eae264b3026d8c35c0af980187b3dbb98e1a39835aaf4b166ba3360c3f'
+REVIEWED_REQUEST_SHA256='6d7311ebecd48b1496302f51e0226b61144de19088b8c23120999814c06ce46d'
 MANIFEST_FIELDS=('schema_version','manifest_id','generation','node_id','policy_generation','audience',
     'attestation_result_id','attestation_evidence_digest','issued_at','expires_at','entries')
 

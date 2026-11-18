@@ -17,47 +17,18 @@ export class ProtectedGitHubAnchor {
   need(configuration&&Object.keys(configuration).sort().join(',')==='genesis_commit,repository,rules_sha256,ruleset_id,schema','ANCHOR_CONFIGURATION_FIELDS');
   need(configuration.schema==='arda.hss.anchor.v1'&&configuration.repository===REPOSITORY&&/^[0-9a-f]{40}$/.test(configuration.genesis_commit)&&Number.isSafeInteger(configuration.ruleset_id)&&configuration.ruleset_id>0&&hex64(configuration.rules_sha256),'ANCHOR_CONFIGURATION');
   need(typeof token==='string'&&token.length>0&&token.length<=4096&&/^[\x21-\x7e]+$/.test(token),'ANCHOR_CREDENTIAL');
-  this.configuration=JSON.parse(new TextDecoder().decode(canonical(configuration)));this.token=token;this.fetcher=fetcher;this.clock=clock;this.lastHttpStatus=null;
+  this.configuration=JSON.parse(new TextDecoder().decode(canonical(configuration)));this.token=token;this.fetcher=fetcher;this.clock=clock;
  }
  async request(path,method='GET',body){
   const base='https://api.github.com/repos/'+REPOSITORY;
-  const allowed=(method==='GET'&&(path==='/rulesets/'+this.configuration.ruleset_id||/^\/git\/ref\/tags\/arda-hss-leaf-[0-9a-f]{64}-0000$/.test(path)||/^\/git\/tags\/[0-9a-f]{40}$/.test(path)))||(method==='POST'&&['/git/tags','/git/refs'].includes(path));need(allowed,'ANCHOR_ENDPOINT');
-  // Native Workers fetch must be called without this adapter as its receiver.
-  const fetcher=this.fetcher;
-  const response=await fetcher(base+path,{method,redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(15000),
+  const allowed=(method==='GET'&&path==='/rulesets/'+this.configuration.ruleset_id)||(method==='POST'&&['/git/tags','/git/refs'].includes(path));need(allowed,'ANCHOR_ENDPOINT');
+  const response=await this.fetcher(base+path,{method,redirect:'error',cache:'no-store',signal:AbortSignal.timeout(15000),
    headers:{Authorization:'Bearer '+this.token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'ARDA-HSS-Leaf-Anchor-v5',...(body?{'Content-Type':'application/json'}:{})},body:body?new TextDecoder().decode(canonical(body)):undefined});
-  this.lastHttpStatus=response.status;
   need(response.status===(method==='GET'?200:201),'ANCHOR_RESPONSE_UNCERTAIN_OR_REF_EXISTS');
   const reader=response.body?.getReader();need(reader,'ANCHOR_RESPONSE_BODY');let total=0,chunks=[];
   try{for(;;){const {done,value}=await reader.read();if(done)break;total+=value.length;need(total<=131072,'ANCHOR_RESPONSE_SIZE');chunks.push(value);}}finally{await reader.cancel().catch(()=>{});}
   const raw=new Uint8Array(total);let offset=0;for(const c of chunks){raw.set(c,offset);offset+=c.length;}
   return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(raw));
- }
- async inspect(){
-  this.lastHttpStatus=null;
-  try{
-   const rules=await this.request('/rulesets/'+this.configuration.ruleset_id);
-   need(rules.id===this.configuration.ruleset_id&&await sha(canonical(rulesProjection(rules)))===this.configuration.rules_sha256,'ANCHOR_RULE_PIN');
-   return {ok:true,http_status:this.lastHttpStatus,reason:'ANCHOR_READ_AND_RULE_PIN_VALID'};
-  }catch{
-   return {ok:false,http_status:this.lastHttpStatus,reason:this.lastHttpStatus!==null&&this.lastHttpStatus!==200?'ANCHOR_HTTP_REFUSED':'ANCHOR_READ_OR_RULE_PIN_REFUSED'};
-  }
- }
- async readBurn(expected){
-  need(expected&&Object.keys(expected).sort().join(',')==='context_sha256,key_sha256,leaf,message_sha256,tag_sha','HISTORICAL_BURN_FIELDS');
-  const e=JSON.parse(new TextDecoder().decode(canonical(expected)));
-  need(e.leaf===0&&hex64(e.key_sha256)&&hex64(e.context_sha256)&&hex64(e.message_sha256)&&/^[0-9a-f]{40}$/.test(e.tag_sha),'HISTORICAL_BURN_PARAMETERS');
-  need((await this.inspect()).ok,'HISTORICAL_BURN_RULES');
-  const tag=PREFIX+e.key_sha256+'-0000',ref='refs/tags/'+tag;
-  const reference=await this.request('/git/ref/tags/'+tag);
-  need(reference.ref===ref&&reference.object?.type==='tag'&&reference.object.sha===e.tag_sha,'HISTORICAL_BURN_REF');
-  const object=await this.request('/git/tags/'+e.tag_sha);
-  need(object.sha===e.tag_sha&&object.tag===tag&&object.object?.type==='commit'&&object.object.sha===this.configuration.genesis_commit&&typeof object.message==='string','HISTORICAL_BURN_TAG');
-  const r=JSON.parse(object.message);
-  need(Object.keys(r).sort().join(',')==='attempt_nonce,context_sha256,expires_at,issued_at,key_sha256,kind,leaf,message_sha256,schema'&&new TextDecoder().decode(canonical(r))===object.message,'HISTORICAL_BURN_CANONICAL');
-  need(r.schema==='arda.hss.leaf_burn.v1'&&r.kind==='registration'&&r.leaf===0&&r.key_sha256===e.key_sha256&&r.context_sha256===e.context_sha256&&r.message_sha256===e.message_sha256&&hex64(r.attempt_nonce),'HISTORICAL_BURN_BINDING');
-  need(Number.isSafeInteger(r.issued_at)&&Number.isSafeInteger(r.expires_at)&&r.issued_at>0&&r.expires_at>r.issued_at&&r.expires_at-r.issued_at<=86400,'HISTORICAL_BURN_WINDOW');
-  return {...r,ref,tag_sha:e.tag_sha};
  }
  async burn(record){
   need(record&&Object.keys(record).sort().join(',')==='attempt_nonce,context_sha256,expires_at,issued_at,key_sha256,kind,leaf,message_sha256','LEAF_BURN_FIELDS');

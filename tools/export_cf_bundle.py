@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import tarfile
 ROOT=Path(__file__).resolve().parents[1]
-FILES=['providers/cloudflare/'+x for x in ('worker.mjs','wrangler.toml','package.json','package-lock.json')]+['cloudflare/hss-'+x+'.mjs' for x in ('engine','anchor','guard','enrollment','rotation')]+['tools/cf_operator.py','tools/export_cf_bundle.py']+['build/'+x for x in ('hss-state.wasm','hss-state-meta.mjs','WASM_BUILD.json')]
+FILES=['providers/cloudflare/'+x for x in ('worker.mjs','wrangler.toml','package.json','package-lock.json')]+['cloudflare/hss-'+x+'.mjs' for x in ('engine','anchor','guard','enrollment')]+['build/'+x for x in ('hss-state.wasm','hss-state-meta.mjs','WASM_BUILD.json')]
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--out',required=True);a=p.parse_args()
     data={name:(ROOT/name).read_bytes() for name in FILES}

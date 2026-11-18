@@ -8,6 +8,8 @@ from cryptography.hazmat.primitives.asymmetric import rsa,ed25519,padding
 from arda_quorum import r13_protocol as r
 from arda_quorum import r13_bridge as bridge
 
+ROOT=Path(__file__).resolve().parents[1]
+
 class R13BridgeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -15,7 +17,7 @@ class R13BridgeTests(unittest.TestCase):
         cls.signer=ed25519.Ed25519PrivateKey.generate()
         cls.profile={str(n):f'{n+1:02x}'*32 for n in r.PCRS}
         cls.policy=r.NodePolicy(cls.ak.public_key(),cls.profile)
-        cls.boot='b08f1e0e-6397-440f-a0ad-73313b7bf87c';cls.now=1000
+        cls.boot=__import__('json').loads((ROOT/'inputs/generation14-staging-request.json').read_bytes())["boot_id"];cls.now=1000
         cls.pins=dict(verifier_spki_sha256=r.public_pin(cls.signer.public_key()),ak_spki_sha256=cls.policy.ak_sha256,
             policy_sha256=cls.policy.sha256,node_id='lenovo-valinor',verifier_id='cloudflare-r13-v2')
         cls.public=cls.signer.public_key().public_bytes(serialization.Encoding.PEM,serialization.PublicFormat.SubjectPublicKeyInfo)

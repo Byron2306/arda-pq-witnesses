@@ -17,7 +17,7 @@ def main():
         ('r13_source_python',['python3','-m','unittest','discover','-s','r13-source','-v'],60),
         ('r13_worker_node',['node','--test','r13-source/worker.test.mjs'],60),
         ('release_review_ledger_node',['node','--test','cloudflare/release-ledger.test.mjs'],60),
-        ('cloudflare_hss_node',['node','--test','cloudflare/hss-engine.test.mjs','cloudflare/hss-guard.test.mjs','cloudflare/hss-enrollment.test.mjs','cloudflare/r13-capture.test.mjs','cloudflare/release-config.test.mjs','cloudflare/release-service.test.mjs'],180)]:
+        ('cloudflare_hss_node',['node','--test','cloudflare/hss-engine.test.mjs','cloudflare/hss-guard.test.mjs','cloudflare/hss-enrollment.test.mjs'],180)]:
         try:
             env=dict(os.environ);env.pop('R13_WRANGLER',None)  # Node/SQLite tests only; actual Workers acceptance is separate.
             run=subprocess.run(command,cwd=ROOT,capture_output=True,text=True,timeout=timeout,env=env)
@@ -36,7 +36,7 @@ def main():
     report=dict(schema='arda.pq.verification.v5',passed=len(results)==8 and all(r['exit_code']==0 for r in results),
         tests=sum(counts.values()),test_counts=counts,results=results,production_authorized=False,interlock='KEEP_CLOSED',
         live_provider_calls=0,rekor_publication_performed=False,cloudflare_runtime_acceptance_executed=False,production_signing_keys_created=False,
-        stateful_cloudflare_signer_implemented=True,cloudflare_hss_custody_candidate_implemented=True,cloudflare_release_vote_endpoint_implemented=True,cloudflare_release_vote_live_deployment_verified=False,stateful_signer_production_admission_verified=False,stateless_provider_signing_implemented=True,provider_deployment_performed=False,container_build_executed=False,provider_enrollment_implemented=True,live_enrollment_executed=False)
+        stateful_cloudflare_signer_implemented=False,cloudflare_hss_custody_candidate_implemented=True,cloudflare_release_vote_endpoint_implemented=False,stateless_provider_signing_implemented=True,provider_deployment_performed=False,container_build_executed=False,provider_enrollment_implemented=True,live_enrollment_executed=False)
     (ROOT/'VERIFICATION_RESULT.json').write_text(json.dumps(report,indent=2)+'\n')
     print('TESTS='+str(report['tests']));print('PRODUCTION_AUTHORIZED=FALSE\nINTERLOCK=KEEP_CLOSED')
     return int(not report['passed'])

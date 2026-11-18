@@ -12,7 +12,7 @@ class ProposalTests(unittest.TestCase):
     def test_actual_generation14_binding(self):
         result=p.validate_request(self.raw,p.REVIEWED_REQUEST_SHA256)
         self.assertEqual(result['generation'],14)
-        self.assertEqual(result['manifest_digest'],'sha256:381d6ac72a53bf04de639c7d73e75fb11760c94f922b955b63d5ec3ea54924e0')
+        self.assertEqual(result['manifest_digest'],'sha256:1f44cd863fbbb00c7e40a4019ad58899df751529fdec04adcd0cc3eb7d12c710')
     def test_unreviewed_request_refused(self):
         with self.assertRaises(ValueError):p.validate_request(self.raw+b' ',p.REVIEWED_REQUEST_SHA256)
     def test_internal_manifest_tamper_refused_even_if_request_rehashed(self):

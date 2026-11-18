@@ -66,9 +66,11 @@ jobs:
             --user "$(id -u):$(id -g)" --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
             --env ARDA_PROVIDER_CONFIG_SHA256 --env ARDA_GITHUB_SIGNER_PKCS8_B64 --env ARDA_IMAGE_DIGEST \
             --env GITHUB_ACTIONS --env GITHUB_REPOSITORY --env GITHUB_WORKFLOW_REF --env GITHUB_SHA \
-            --mount "type=bind,src=$RUNNER_TEMP/arda-pq-config,dst=/app/operator-config,readonly" \
+            --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/workspace,readonly" \
+            --mount "type=bind,src=$RUNNER_TEMP/arda-pq-config,dst=/workspace/operator-config,readonly" \
             --mount "type=bind,src=$RUNNER_TEMP/arda-pq-request,dst=/request,readonly" \
             --mount "type=bind,src=$RUNNER_TEMP/arda-pq-output,dst=/output" \
+            --workdir /workspace \
             "$ARDA_WITNESS_IMAGE" python3 tools/provider_vote.py \
             --provider github --request /request/request.json --out /output/github-vote.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

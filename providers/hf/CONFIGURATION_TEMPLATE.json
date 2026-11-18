@@ -1,21 +1,21 @@
 {
-  "schema": "arda.pq.provider_configuration_draft.v1",
-  "state": "UNENROLLED",
-  "configuration": {
-    "schema": "arda.pq.provider_config.v1",
-    "provider": "hf",
-    "policy_file_sha256": null,
-    "stage_request_sha256": "2965b8eae264b3026d8c35c0af980187b3dbb98e1a39835aaf4b166ba3360c3f",
-    "source_manifest_sha256": "2561e3d009d4e45dda04df5d46cafc7738f0b093122acc7f222541034def2739",
-    "image_digest": null,
-    "runtime_identity": {
-      "space_id": null
-    }
-  },
-  "production_authorized": false,
   "blockers": [
     "ACTUAL_ALL_THREE_WITNESS_ENROLLMENT_REQUIRED",
     "IMMUTABLE_IMAGE_REVIEW_REQUIRED",
     "PROVIDER_IDENTITY_REQUIRED"
-  ]
+  ],
+  "configuration": {
+    "image_digest": null,
+    "policy_file_sha256": null,
+    "provider": "hf",
+    "runtime_identity": {
+      "space_id": null
+    },
+    "schema": "arda.pq.provider_config.v1",
+    "source_manifest_sha256": "e499b5cf26a1026c79b409b842489d8c74982ae43cd01f1a1ac4014809d9bc38",
+    "stage_request_sha256": "6d7311ebecd48b1496302f51e0226b61144de19088b8c23120999814c06ce46d"
+  },
+  "production_authorized": false,
+  "schema": "arda.pq.provider_configuration_draft.v1",
+  "state": "UNENROLLED"
 }

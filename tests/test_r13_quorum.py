@@ -10,7 +10,7 @@ class BoundQuorumTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         pq.QuorumTests.setUpClass();att.R13BridgeTests.setUpClass()
-        cls.expected=dict(pq.QuorumTests.expected,r13_evidence_sha256=q.sha(q.canonical(att.R13BridgeTests.capture)))
+        cls.expected=dict(pq.QuorumTests.expected,boot_id=att.R13BridgeTests.boot,r13_evidence_sha256=q.sha(q.canonical(att.R13BridgeTests.capture)))
         cls.certificate=copy.deepcopy(pq.QuorumTests.certificate)
         cls.certificate['proposal'].update(cls.expected,issued_at=1000)
         for vote in cls.certificate['votes']:
