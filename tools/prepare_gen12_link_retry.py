@@ -29,6 +29,7 @@ PATCHES = {
         "7792fcbfd487dc5add15abea71edcf5e99f645f097ebde9c37caaeafe8d8a4ca"),
 }
 CAP = 512 * 1024 * 1024
+EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
 
 
 def need(ok, message):
@@ -45,12 +46,13 @@ def canonical(obj):
                       allow_nan=False).encode("ascii")
 
 
-def open_regular(path, *, root_owned, cap=CAP):
+def open_regular(path, *, root_owned, cap=CAP, allow_empty=False):
     flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
     stream = os.fdopen(os.open(path, flags), "rb")
     try:
         meta = os.fstat(stream.fileno())
-        need(stat.S_ISREG(meta.st_mode) and 0 < meta.st_size <= cap and
+        minimum = 0 if allow_empty else 1
+        need(stat.S_ISREG(meta.st_mode) and minimum <= meta.st_size <= cap and
              (not root_owned or (meta.st_uid == 0 and meta.st_nlink == 1
                                  and not meta.st_mode & 0o022)), "unprotected input: " + str(path))
         return stream, meta
@@ -97,7 +99,9 @@ def derive(previous):
 
 
 def verified_copy(source, digest, *, target=None, root_owned=True):
-    stream, meta = open_regular(source, root_owned=root_owned)
+    # The signed inventory includes deliberately empty Python package markers.
+    stream, meta = open_regular(source, root_owned=root_owned,
+                                allow_empty=digest == EMPTY_SHA256)
     with stream:
         if target is None:
             observed = hashlib.file_digest(stream, "sha256").hexdigest()
