@@ -60,6 +60,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          install -d -m 700 "$GITHUB_WORKSPACE/operator-config"
           mkdir -m 700 "$RUNNER_TEMP/arda-pq-output"
           export ARDA_IMAGE_DIGEST="${ARDA_WITNESS_IMAGE##*@}"
           docker run --rm --pull=never --network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges \
