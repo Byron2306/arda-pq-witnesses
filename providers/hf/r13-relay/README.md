@@ -8,11 +8,11 @@ app_port: 7860
 
 **This is NOT the existing ARDA PQ/Hugging Face witness. Deploy as a separate reviewed Space.**
 
-V4 accepts a fresh R13 v2 capture over authenticated HTTPS. It immediately encrypts the archive to a separately controlled GitHub X25519 public key, stores only a one-time ticket/challenge digest in SQLite, and dispatches an encrypted message through GitHub's repository_dispatch API. The GitHub workflow claims the ticket once, decrypts only in the runner, and verifies challenge and evidence receipt through existing V3 cryptographic verification. No plaintext R13 capture is placed in public GitHub artifacts or event payloads.
+V4 accepts a fresh R13 v2 capture over authenticated HTTPS. It immediately encrypts the archive to a separately controlled GitHub X25519 public key, reserves a one-time ticket/challenge digest in an independently deployed Cloudflare SQLite-backed Durable Object, and dispatches an encrypted message through GitHub's repository_dispatch API. The GitHub workflow claims the ticket once, decrypts only in the runner, and verifies challenge and evidence receipt through existing V3 cryptographic verification. No plaintext R13 capture is placed in public GitHub artifacts or event payloads.
 
 ## Required independent provisioning
 
-A dedicated Hugging Face Space must have a real persistent volume mounted at /data. The relay fails startup without a mounted persistent volume. Ephemeral storage is NOT sufficient for replay prevention.
+The HF Space no longer requires SQLite or any filesystem-mounted database. Deploy the separate Cloudflare Durable Object in `cloudflare/r13-relay-ledger/` first. It is the authoritative one-time ticket ledger. Until it is live, keep HF standby enabled.
 
 HF Space secrets:
 - ARDA_RELAY_INGEST_TOKEN: high-entropy sender bearer. Present only in Valinor's private token file and HF relay.
@@ -21,7 +21,9 @@ HF Space secrets:
 HF Space variables:
 - ARDA_RELAY_GITHUB_REPO: Byron2306/arda-pq-witnesses
 - ARDA_RELAY_RECIPIENT_PUBLIC_B64: X25519 recipient public key (32 raw bytes encoded as canonical base64).
-- ARDA_RELAY_STATE_MOUNT: /data (must be an actual persistent mount).
+- ARDA_RELAY_LEDGER_URL: exact separate Cloudflare Worker HTTPS origin (no path or query).
+HF Space secret:
+- ARDA_RELAY_LEDGER_TOKEN: independent high-entropy Cloudflare Worker ledger bearer; matches the Worker's `RELAY_LEDGER_SHARED_SECRET` secret.
 
 GitHub Actions secrets:
 - ARDA_RELAY_PRIVATE_B64: corresponding X25519 32-byte private key in canonical base64, **generated under independent off-host custody, never on Valinor and never placed on HF**.
@@ -50,10 +52,10 @@ Never publish raw TPM evidence, capture archives, private keys, bearer tokens or
 
 ## Claims and limitations
 
-The relay provides atomic duplicate challenge rejection and a durable single-use ticket on its configured persistent SQLite volume. Failed dispatch burns the challenge ID, intentionally. A malicious privileged HF administrator, GitHub maintainer, or compromise of relay/GitHub credentials remains in the trust boundary. This is scoped relay replay resistance, not globally irreversible proof. A 120-second challenge deadline includes GitHub scheduling latency; if expired, verification REFUSES.
+The relay requires Cloudflare Durable Object atomic duplicate challenge rejection and a durable single-use ticket on its separately deployed SQLite-backed object. Failed dispatch burns the challenge ID, intentionally. A malicious privileged HF administrator, GitHub maintainer, or compromise of relay/GitHub credentials remains in the trust boundary. This is scoped relay replay resistance, not globally irreversible proof. A 120-second challenge deadline includes GitHub scheduling latency; if expired, verification REFUSES.
 
 The first relay stage only parses the unsigned JSON challenge metadata and checks freshness before dispatch; GitHub independently checks the real signed challenge, receipt, evidence hashes and pins. The R13 protocol binds a client-reported boot ID to a TPM quote. It is NOT an independent runtime BPF observation, a Phase 4 signing authority, a replacement for the legacy Acer Phase 4 verifier, or GEN14 approval.
 
-The GitHub result always retains status REFUSE, Phase4=false, OS-grade=false and KEEP_CLOSED, including on a cryptographically verified R13 receipt.
+HF standby must remain enabled until the Cloudflare ledger and all credentials are independently validated. The GitHub result always retains status REFUSE, Phase4=false, OS-grade=false and KEEP_CLOSED, including on a cryptographically verified R13 receipt.
 
 **Pre-production tasks:** threat-model review, supply-chain image/digest pinning, deployment integration tests, secure GitHub credential rotation, recipient key generation ceremony, persistent volume validation and real hardware capture trial. Do not merge or deploy as authorized Phase4 service.
