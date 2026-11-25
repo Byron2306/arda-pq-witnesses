@@ -9,6 +9,7 @@ import urllib.error
 from urllib.parse import urlsplit
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from crypto_box import unb64, seal, canonical, hash_envelope
+from synthetic_lane import deadline, active, synthetic_capture
 
 MAX_CAPTURE=32768
 
@@ -101,6 +102,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 class Handler(BaseHTTPRequestHandler):
     relay=None
+    test_until=None
     def log_message(self,fmt,*args):pass
     def reply(self,code,data):
         body=canonical(data);self.send_response(code)
@@ -109,21 +111,26 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length',str(len(body)))
         self.end_headers();self.wfile.write(body)
     def do_GET(self):
-        if urlsplit(self.path).path=='/health':self.reply(200,{'status':'standby' if self.relay is None else 'up','ingest_enabled':self.relay is not None,'phase4_authorized':False,'interlock':'KEEP_CLOSED'})
+        if urlsplit(self.path).path=='/health':self.reply(200,{'status':'test_window' if active(self.test_until) else 'standby' if self.relay is None or self.test_until is not None else 'up','ingest_enabled':self.relay is not None and self.test_until is None,'synthetic_test_enabled':active(self.test_until),'phase4_authorized':False,'interlock':'KEEP_CLOSED'})
         else:self.reply(404,{'error':'NOT_FOUND'})
     def do_POST(self):
-        if urlsplit(self.path).path not in ('/v1/submit','/v1/claim'):return self.reply(404,{'error':'NOT_FOUND'})
-        if self.relay is None:return self.reply(503,{'error':'RELAY_STANDBY','interlock':'KEEP_CLOSED'})
-        key='ARDA_RELAY_INGEST_TOKEN' if urlsplit(self.path).path=='/v1/submit' else 'ARDA_RELAY_CLAIM_TOKEN'
+        route=urlsplit(self.path).path
+        if route not in ('/v1/submit','/v1/claim','/v1/test-submit'):return self.reply(404,{'error':'NOT_FOUND'})
+        if self.relay is None or (self.test_until is not None and (not active(self.test_until) or route=='/v1/submit')) or (self.test_until is None and route=='/v1/test-submit'):
+            return self.reply(503,{'error':'RELAY_STANDBY','interlock':'KEEP_CLOSED'})
+        key='ARDA_RELAY_INGEST_TOKEN' if route in ('/v1/submit','/v1/test-submit') else 'ARDA_RELAY_CLAIM_TOKEN'
         bearer=self.headers.get('Authorization','')
         if not hmac.compare_digest(bearer,'Bearer '+self.relay.cfg[key]):return self.reply(401,{'error':'UNAUTHORIZED'})
-        cap=MAX_CAPTURE if self.path=='/v1/submit' else 1024
+        cap=MAX_CAPTURE if route in ('/v1/submit','/v1/test-submit') else 1024
         if self.headers.get('Content-Type','').split(';')[0]!='application/json':return self.reply(415,{'error':'CONTENT_TYPE'})
         try:
             length=int(self.headers.get('Content-Length','-1'))
             if not 0<length<=cap:return self.reply(413,{'error':'SIZE'})
             raw=self.rfile.read(length)
-            if urlsplit(self.path).path=='/v1/submit':return self.reply(202,self.relay.submit(raw))
+            if route=='/v1/test-submit':
+                if not synthetic_capture(raw):return self.reply(400,{'error':'SYNTHETIC_CAPTURE_REQUIRED'})
+                return self.reply(202,self.relay.submit(raw))
+            if route=='/v1/submit':return self.reply(202,self.relay.submit(raw))
             req=json.loads(raw)
             if not isinstance(req,dict) or set(req)!={'ticket','envelope_sha256'}:raise ValueError('CLAIM_FIELDS')
             accepted=self.relay.claim(req['ticket'],req['envelope_sha256'])
@@ -132,9 +139,9 @@ class Handler(BaseHTTPRequestHandler):
         except (urllib.error.URLError,RuntimeError,OSError):return self.reply(503,{'error':'RELAY_UNAVAILABLE'})
 
 def main():
-    if os.environ.get('ARDA_RELAY_STANDBY_ONLY') == '1':
-        Handler.relay=None
-    else:
+    Handler.test_until=deadline(os.environ)
+    Handler.relay=None
+    if os.environ.get('ARDA_RELAY_STANDBY_ONLY')!='1' or Handler.test_until is not None:
         cfg,pub=require_config()
         ledger=DurableLedger(cfg['ARDA_RELAY_LEDGER_URL'],cfg['ARDA_RELAY_LEDGER_TOKEN'])
         Handler.relay=Relay(cfg,pub,ledger)
