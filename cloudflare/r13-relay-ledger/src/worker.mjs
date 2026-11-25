@@ -25,13 +25,16 @@ export class R13RelayLedger {
     if(new URL(request.url).pathname==="/reserve") {
       if(!body || Object.keys(body).sort().join(",")!=="challenge_id,envelope_sha256,expires_at,ticket" || !HEX32.test(body.challenge_id) || !HEX48.test(body.ticket) || !HEX64.test(body.envelope_sha256) || !Number.isSafeInteger(body.expires_at) || body.expires_at<=now || body.expires_at>now+300) return json({reserved:false,error:"INVALID_RESERVATION"},400);
       // Unique index is the atomic arbiter. Never delete challenges: no late replay.
-      const rows=this.sql.exec("INSERT OR IGNORE INTO claims(ticket,challenge_id,envelope_sha256,expires_at,used) VALUES (?,?,?,?,0)",body.ticket,body.challenge_id,body.envelope_sha256,body.expires_at);
-      return json({reserved:rows.rowsWritten===1},rows.rowsWritten===1?201:409);
+      this.sql.exec("INSERT OR IGNORE INTO claims(ticket,challenge_id,envelope_sha256,expires_at,used) VALUES (?,?,?,?,0)",body.ticket,body.challenge_id,body.envelope_sha256,body.expires_at);
+      // rowsWritten counts SQLite index writes too; changes() counts changed table rows.
+      const changed=this.sql.exec("SELECT changes() AS changed").one().changed;
+      return json({reserved:changed===1},changed===1?201:409);
     }
     if(new URL(request.url).pathname==="/claim") {
       if(!body || Object.keys(body).sort().join(",")!=="envelope_sha256,ticket" || !HEX48.test(body.ticket) || !HEX64.test(body.envelope_sha256)) return json({claimed:false,error:"INVALID_CLAIM"},400);
-      const rows=this.sql.exec("UPDATE claims SET used=1 WHERE ticket=? AND envelope_sha256=? AND used=0 AND expires_at>?",body.ticket,body.envelope_sha256,now);
-      return json({claimed:rows.rowsWritten===1},rows.rowsWritten===1?200:409);
+      this.sql.exec("UPDATE claims SET used=1 WHERE ticket=? AND envelope_sha256=? AND used=0 AND expires_at>?",body.ticket,body.envelope_sha256,now);
+      const changed=this.sql.exec("SELECT changes() AS changed").one().changed;
+      return json({claimed:changed===1},changed===1?200:409);
     }
     return json({error:"NOT_FOUND"},404);
   }
