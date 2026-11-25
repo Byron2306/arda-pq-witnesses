@@ -1,0 +1,68 @@
+name: ARDA R13 GitHub-owned ledger V6 synthetic review (non-authoritative)
+run-name: ARDA R13 V6 synthetic ledger reservation and one-time claim
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/arda-r13-github-ledger-v6.yml"
+      - "tools/r13_offhost_gate/relay_review_v6.py"
+      - "tools/r13_offhost_gate/test_relay_review_v6.py"
+      - "providers/hf/r13-relay/gateway.py"
+  repository_dispatch:
+    types: [arda_r13_capture_v6]
+permissions:
+  contents: read
+concurrency:
+  group: arda-r13-relay-v6
+  cancel-in-progress: false
+jobs:
+  tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Install isolated crypto dependency
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --disable-pip-version-check 'cryptography==46.0.7'
+      - name: Run regression suite
+        run: |
+          "$RUNNER_TEMP/venv/bin/python" -m unittest discover -s tools/r13_offhost_gate -p 'test_*.py' -v
+      - name: Prove GitHub runner can reach enrolled Cloudflare ledger (unauthenticated, no writes)
+        run: |
+          set -euo pipefail
+          code="$(curl --noproxy '*' --silent --show-error --max-time 12 --output /dev/null --write-out '%{http_code}' -X POST -H 'Content-Type: application/json' --data-binary '{}' https://arda-r13-relay-ledger.dio-workflows.workers.dev/claim)"
+          test "$code" = 401 || { echo "GITHUB_TO_CLOUDFLARE=REFUSE HTTP=$code"; exit 1; }
+          echo "GITHUB_TO_CLOUDFLARE_TLS_AND_EDGE=PASS"
+          echo "LEDGER_RESERVATION=NOT_ATTEMPTED"
+  synthetic_review:
+    if: github.event_name == 'repository_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Install isolated crypto dependency
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --disable-pip-version-check 'cryptography==46.0.7'
+      - name: Validate encrypted challenge and reserve then claim from GitHub
+        env:
+          ARDA_RELAY_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+          ARDA_RELAY_PRIVATE_B64: ${{ secrets.ARDA_RELAY_PRIVATE_B64 }}
+          ARDA_RELAY_LEDGER_TOKEN: ${{ secrets.ARDA_RELAY_LEDGER_TOKEN }}
+          ARDA_RELAY_LEDGER_URL: ${{ vars.ARDA_RELAY_LEDGER_URL }}
+          ARDA_RESULT_PATH: ${{ runner.temp }}/arda-r13-v6/result.json
+        run: |
+          "$RUNNER_TEMP/venv/bin/python" tools/r13_offhost_gate/relay_review_v6.py
+          cat "$RUNNER_TEMP/arda-r13-v6/result.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload redacted review metadata only
+        uses: actions/upload-artifact@v6
+        with:
+          name: arda-r13-github-ledger-v6-review
+          path: ${{ runner.temp }}/arda-r13-v6/result.json
+          if-no-files-found: error
+          retention-days: 7
