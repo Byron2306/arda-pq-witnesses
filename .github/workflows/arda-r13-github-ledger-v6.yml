@@ -9,12 +9,51 @@ on:
       - "providers/hf/r13-relay/gateway.py"
   repository_dispatch:
     types: [arda_r13_capture_v6]
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
   group: arda-r13-relay-v6
   cancel-in-progress: false
 jobs:
+  ledger_auth_preflight:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Validate GitHub-to-Cloudflare authenticated invalid claim (no reservation)
+        env:
+          ARDA_RELAY_LEDGER_TOKEN: ${{ secrets.ARDA_RELAY_LEDGER_TOKEN }}
+          ARDA_RELAY_LEDGER_URL: ${{ vars.ARDA_RELAY_LEDGER_URL }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request,urllib.error
+          from urllib.parse import urlsplit
+          host='arda-r13-relay-ledger.dio-workflows.workers.dev'
+          base=os.environ.get('ARDA_RELAY_LEDGER_URL','').rstrip('/')
+          token=os.environ.get('ARDA_RELAY_LEDGER_TOKEN','')
+          p=urlsplit(base)
+          if p.scheme!='https' or p.hostname!=host or p.port not in (None,443) or p.path or p.query or p.fragment or p.username or p.password or len(token)<40:
+              raise SystemExit('GITHUB_LEDGER_CONFIGURATION=REFUSE')
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,*args): return None
+          request=urllib.request.Request(base+'/claim',data=b'{}',method='POST',
+              headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
+          opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
+          try:
+              with opener.open(request,timeout=10):
+                  raise SystemExit('LEDGER_AUTH_PREFLIGHT=REFUSE_UNEXPECTED_SUCCESS')
+          except urllib.error.HTTPError as exc:
+              with exc:
+                  body=exc.read(256)
+              if exc.code != 400 or json.loads(body) != {'claimed':False,'error':'INVALID_CLAIM'}:
+                  raise SystemExit('LEDGER_AUTH_PREFLIGHT=REFUSE_HTTP')
+          except (urllib.error.URLError,TimeoutError,OSError,ValueError):
+              raise SystemExit('LEDGER_AUTH_PREFLIGHT=REFUSE_TRANSPORT')
+          print('GITHUB_TO_CLOUDFLARE_AUTHENTICATED=PASS')
+          print('LEDGER_RESERVATION=NOT_ATTEMPTED')
+          print('GEN14_INTERLOCK=KEEP_CLOSED')
+          PY
   tests:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
