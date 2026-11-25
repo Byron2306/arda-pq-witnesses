@@ -83,6 +83,40 @@ class ControllerTests(unittest.TestCase):
                 with self.assertRaises(v6.Refuse):
                     v6.submit(client,record,lambda:None)
         self.assertEqual(record['phase'],'DISPATCH_UNCERTAIN')
+    def test_refused_503_preserves_allowlisted_stage_and_upstream_status(self):
+        client=Client()
+        client.values.update({
+            'ARDA_RELAY_TEST_BACKEND':'github-v6',
+            'ARDA_RELAY_TEST_UNTIL':str(DEADLINE)})
+        record={'phase':'READY','deadline':DEADLINE}
+        class HTTPRefusal:
+            code=503
+            def __enter__(self):return self
+            def __exit__(self,*args):return False
+            def read(self,limit):return json.dumps({
+                'error':'RELAY_UNAVAILABLE',
+                'stage':'GITHUB_HTTP_REFUSAL',
+                'upstream_http_status':403,
+                'secret':'never-journal'}).encode()
+        class FailureOpener:
+            def open(self,*args,**kwargs):
+                raise v6.urllib.error.HTTPError(v6.BASE+'/v1/test-submit',
+                    503,'Unavailable',{},None)
+        class SafeFailureOpener:
+            def open(self,*args,**kwargs):
+                return self.raise_http()
+            def raise_http(self):
+                err=v6.urllib.error.HTTPError(v6.BASE,503,'Unavailable',{},None)
+                err.read=lambda limit:HTTPRefusal().read(limit)
+                raise err
+        with tempfile.TemporaryDirectory() as tmp:
+            token=Path(tmp)/'token';token.write_text('a'*64)
+            with patch.object(v6,'TOKEN',token),patch.object(v6,'status',return_value=window()),patch.object(v6.time,'time',return_value=1800000000),patch.object(v6.urllib.request,'build_opener',return_value=SafeFailureOpener()):
+                outcome=v6.submit(client,record,lambda:None)
+        self.assertIn('GATEWAY_STAGE=GITHUB_HTTP_REFUSAL',outcome)
+        self.assertIn('UPSTREAM_HTTP=403',outcome)
+        self.assertEqual(record['upstream_http_status'],403)
+        self.assertNotIn('secret',record)
     def test_cleanup_is_idempotent_and_requires_live_standby(self):
         client=Client();client.values.update({'ARDA_RELAY_TEST_UNTIL':str(DEADLINE),
                                             'ARDA_RELAY_TEST_BACKEND':'github-v6'})
