@@ -13,6 +13,18 @@ from synthetic_lane import deadline, active, synthetic_capture
 
 MAX_CAPTURE=32768
 
+class RelayStageError(RuntimeError):
+    """Static stage code only. Never embed provider bodies, tokens or URLs."""
+    def __init__(self, stage):
+        if stage not in {
+            'LEDGER_HTTP_REFUSAL', 'LEDGER_TRANSPORT_FAILURE',
+            'LEDGER_BAD_RESPONSE', 'GITHUB_HTTP_REFUSAL',
+            'GITHUB_TRANSPORT_FAILURE', 'GITHUB_BAD_RESPONSE',
+        }:
+            raise ValueError('INVALID_STAGE_CODE')
+        self.stage=stage
+        super().__init__(stage)
+
 def require_config():
     keys=('ARDA_RELAY_INGEST_TOKEN','ARDA_RELAY_CLAIM_TOKEN','ARDA_RELAY_GITHUB_TOKEN','ARDA_RELAY_GITHUB_REPO','ARDA_RELAY_RECIPIENT_PUBLIC_B64','ARDA_RELAY_LEDGER_URL','ARDA_RELAY_LEDGER_TOKEN')
     cfg={key:os.environ.get(key,'') for key in keys}
@@ -46,9 +58,11 @@ class DurableLedger:
         except urllib.error.HTTPError as exc:
             with exc:
                 if exc.code==409:return 409,{}
-            raise RuntimeError('LEDGER_UNAVAILABLE') from None
-        except (urllib.error.URLError,TimeoutError,ValueError,OSError) as exc:
-            raise RuntimeError('LEDGER_UNAVAILABLE') from exc
+            raise RelayStageError('LEDGER_HTTP_REFUSAL') from None
+        except (urllib.error.URLError,TimeoutError,OSError) as exc:
+            raise RelayStageError('LEDGER_TRANSPORT_FAILURE') from None
+        except (ValueError,TypeError) as exc:
+            raise RelayStageError('LEDGER_BAD_RESPONSE') from None
     def reserve(self,ticket,cid,digest,expiry):
         status,data=self.call('reserve',{'ticket':ticket,'challenge_id':cid,'envelope_sha256':digest,'expires_at':expiry})
         return status==201 and data=={'reserved':True}
@@ -94,8 +108,14 @@ class Relay:
         return self.ledger.claim(ticket,digest)
     def _dispatch(self,payload):
         request=urllib.request.Request('https://api.github.com/repos/'+self.cfg['ARDA_RELAY_GITHUB_REPO']+'/dispatches',data=canonical(payload),headers={'Authorization':'Bearer '+self.cfg['ARDA_RELAY_GITHUB_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json','User-Agent':'arda-r13-relay/1'},method='POST')
-        with urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect()).open(request,timeout=8) as response:
-            if response.status!=204:raise RuntimeError('GITHUB_DISPATCH_FAILED')
+        try:
+            with urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect()).open(request,timeout=8) as response:
+                if response.status!=204:raise RelayStageError('GITHUB_BAD_RESPONSE')
+        except urllib.error.HTTPError as exc:
+            with exc: pass
+            raise RelayStageError('GITHUB_HTTP_REFUSAL') from None
+        except (urllib.error.URLError,TimeoutError,OSError) as exc:
+            raise RelayStageError('GITHUB_TRANSPORT_FAILURE') from None
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args):return None
@@ -136,7 +156,8 @@ class Handler(BaseHTTPRequestHandler):
             accepted=self.relay.claim(req['ticket'],req['envelope_sha256'])
             return self.reply(200 if accepted else 409,{'claimed':accepted})
         except (ValueError,KeyError,TypeError,json.JSONDecodeError):return self.reply(400,{'error':'INVALID_REQUEST'})
-        except (urllib.error.URLError,RuntimeError,OSError):return self.reply(503,{'error':'RELAY_UNAVAILABLE'})
+        except RelayStageError as exc:return self.reply(503,{'error':'RELAY_UNAVAILABLE','stage':exc.stage,'interlock':'KEEP_CLOSED'})
+        except (urllib.error.URLError,RuntimeError,OSError):return self.reply(503,{'error':'RELAY_UNAVAILABLE','interlock':'KEEP_CLOSED'})
 
 def main():
     Handler.test_until=deadline(os.environ)
