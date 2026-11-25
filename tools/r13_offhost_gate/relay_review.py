@@ -11,6 +11,7 @@ sys.path.insert(0,str(ROOT/'tools/r13_offhost_gate'))
 sys.path.insert(0,str(ROOT/'providers/hf/r13-relay'))
 from verify_capture import verify_capture, result as refusal
 from crypto_box import unb64, unseal, hash_envelope, canonical
+from synthetic_lane import synthetic_capture
 
 def review(dispatch, *, token, recipient_private_b64, endpoint, node_id, verifier_id):
     if not token or not endpoint or not node_id or not verifier_id or not recipient_private_b64:
@@ -38,6 +39,8 @@ def review(dispatch, *, token, recipient_private_b64, endpoint, node_id, verifie
         private=unb64(recipient_private_b64)
         if len(private)!=32:raise ValueError('KEY_LENGTH')
         plain=unseal(box,private)
+        if synthetic_capture(plain):
+            return refusal('SYNTHETIC_TRANSPORT_DECRYPTED_R13_NOT_VERIFIED')
         return verify_capture(plain,node_id=node_id,verifier_id=verifier_id)
     except Exception:
         return refusal('RELAY_DECRYPT_OR_R13_VERIFICATION_FAILED')
