@@ -147,28 +147,33 @@ class DurableLedger:
         results=[]
         for family,(kind,proto,address) in selected.items():
             label='IPV4' if family==socket.AF_INET else 'IPV6'
-            start=time.monotonic()
             conn=None
+            phase='TCP'
+            start=time.monotonic()
+            observation={'family':label}
             try:
                 conn=socket.socket(family,kind,proto)
                 conn.settimeout(2.5)
                 conn.connect(address)
-                tcp_ms=ms(start)
+                observation['tcp_ms']=ms(start)
+                phase='TLS'
                 start=time.monotonic()
                 context=ssl.create_default_context()
                 with context.wrap_socket(conn,server_hostname=hostname) as tls:
                     conn=None
-                    tls.do_handshake()
-                    tls_ms=ms(start)
-                results.append({'family':label,'phase':'TLS','status':'PASS','tcp_ms':tcp_ms,'tls_ms':tls_ms})
+                    observation['tls_ms']=ms(start)
+                observation.update({'phase':'TLS','status':'PASS'})
             except (socket.timeout,TimeoutError):
-                results.append({'family':label,'phase':'TCP_OR_TLS','status':'TIMEOUT'})
+                observation.update({'phase':phase,'status':'TIMEOUT'})
+                observation[phase.lower()+'_ms']=ms(start)
             except ssl.SSLError:
-                results.append({'family':label,'phase':'TLS','status':'TLS_ERROR'})
+                observation.update({'phase':'TLS','status':'TLS_ERROR','tls_ms':ms(start)})
             except OSError:
-                results.append({'family':label,'phase':'TCP_OR_TLS','status':'NETWORK_ERROR'})
+                observation.update({'phase':phase,'status':'NETWORK_ERROR'})
+                observation[phase.lower()+'_ms']=ms(start)
             finally:
                 if conn is not None: conn.close()
+            results.append(observation)
         return {'probe':'PHASE_RESULTS','dns_ms':dns_ms,'routes':results}
     def reserve(self,ticket,cid,digest,expiry):
         status,data=self.call('reserve',{'ticket':ticket,'challenge_id':cid,'envelope_sha256':digest,'expires_at':expiry})

@@ -114,3 +114,35 @@ class TestProbe(unittest.TestCase):
         answers=[];h.reply=lambda code,body:answers.append((code,body))
         with patch('gateway.active',return_value=True):h.do_POST()
         self.assertEqual(answers,[(200,{'probe':'PHASE_RESULTS','dns_ms':1,'routes':[]})])
+
+    def test_tcp_timeout_is_attributed_to_tcp(self):
+        class Socket:
+            def settimeout(self, seconds): self.seconds=seconds
+            def connect(self, address): raise socket.timeout('hidden network detail')
+            def close(self): pass
+        ledger=DurableLedger('https://private-ledger.example','SECRET_TOKEN')
+        addresses=[(socket.AF_INET,socket.SOCK_STREAM,6,'',('192.0.2.1',443))]
+        with patch('gateway.socket.getaddrinfo',return_value=addresses), patch('gateway.socket.socket',return_value=Socket()):
+            value=ledger.probe_connection_phases()
+        self.assertEqual(value['routes'][0]['phase'],'TCP')
+        self.assertEqual(value['routes'][0]['status'],'TIMEOUT')
+        self.assertIn('tcp_ms',value['routes'][0])
+        self.assertNotIn('tls_ms',value['routes'][0])
+        self.assertNotIn('hidden network detail',repr(value))
+    def test_tls_timeout_is_attributed_to_tls(self):
+        class Socket:
+            def settimeout(self, seconds): pass
+            def connect(self, address): pass
+            def close(self): pass
+        class SSL:
+            def wrap_socket(self, connection, server_hostname):
+                raise socket.timeout('hidden tls detail')
+        ledger=DurableLedger('https://private-ledger.example','SECRET_TOKEN')
+        addresses=[(socket.AF_INET,socket.SOCK_STREAM,6,'',('192.0.2.1',443))]
+        with patch('gateway.socket.getaddrinfo',return_value=addresses), patch('gateway.socket.socket',return_value=Socket()), patch('gateway.ssl.create_default_context',return_value=SSL()):
+            value=ledger.probe_connection_phases()
+        self.assertEqual(value['routes'][0]['phase'],'TLS')
+        self.assertEqual(value['routes'][0]['status'],'TIMEOUT')
+        self.assertIn('tcp_ms',value['routes'][0])
+        self.assertIn('tls_ms',value['routes'][0])
+        self.assertNotIn('hidden tls detail',repr(value))
