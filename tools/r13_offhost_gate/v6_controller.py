@@ -99,7 +99,7 @@ def prepare(client,record):
     record.update({'phase':'ARMED'})
     return 'V6_BACKEND_ARMED=PASS'
 
-def open_window(client,record):
+def open_window(client,record,persist):
     require(record['phase']=='ARMED','NOT_ARMED')
     v=cfg(client)
     require(var(v,'ARDA_RELAY_STANDBY_ONLY')=='1'
@@ -109,6 +109,7 @@ def open_window(client,record):
     deadline=int(time.time())+WINDOW_SECONDS
     # Persist pending intent BEFORE manipulating HF configuration.
     record.update({'phase':'OPEN_REQUESTED','deadline':deadline})
+    persist()
     client.add_space_variable(SPACE,'ARDA_RELAY_TEST_UNTIL',str(deadline))
     return 'V6_WINDOW_REQUESTED=PASS'
 
@@ -204,7 +205,7 @@ def execute(command,client,record,persist):
         print('LIVE_HEALTH='+json.dumps(h,sort_keys=True))
         return 'GEN14_INTERLOCK=KEEP_CLOSED'
     if command=='arm':return prepare(client,record)
-    if command=='open':return open_window(client,record)
+    if command=='open':return open_window(client,record,persist)
     if command=='ready':return check_ready(client,record)
     if command=='submit':return submit(client,record,persist)
     if command=='close':return close_window(client,record)
