@@ -175,6 +175,70 @@ class DurableLedger:
                 if conn is not None: conn.close()
             results.append(observation)
         return {'probe':'PHASE_RESULTS','dns_ms':dns_ms,'routes':results}
+    def probe_tls_differential(self):
+        """Bounded, credential-free TLS differential against the enrolled ledger origin.
+
+        At most two distinct IPv4 addresses x two verified TLS versions x two passes.
+        No HTTP, ledger bearer, IP addresses, certificate contents or exception strings returned.
+        """
+        hostname=urlsplit(self.url).hostname
+        if not hostname:
+            return {'probe':'TLS_DIFFERENTIAL_REFUSE','phase':'CONFIGURATION'}
+        clock=time.monotonic
+        started=clock()
+        try:
+            records=socket.getaddrinfo(hostname,443,family=socket.AF_INET,type=socket.SOCK_STREAM)
+        except socket.gaierror:
+            return {'probe':'TLS_DIFFERENTIAL_REFUSE','phase':'DNS','category':'RESOLUTION_FAILED'}
+        except OSError:
+            return {'probe':'TLS_DIFFERENTIAL_REFUSE','phase':'DNS','category':'NETWORK'}
+        dns_ms=round((clock()-started)*1000)
+        targets=[]
+        seen=set()
+        for family,kind,proto,_,address in records:
+            if family!=socket.AF_INET or address[0] in seen:
+                continue
+            seen.add(address[0])
+            targets.append((family,kind,proto,address))
+            if len(targets)==2:
+                break
+        if not targets:
+            return {'probe':'TLS_DIFFERENTIAL_REFUSE','phase':'DNS','category':'NO_IPV4_ADDRESS','dns_ms':dns_ms}
+        outcomes=[]
+        for index,(family,kind,proto,address) in enumerate(targets,1):
+            for version_label,version in (('TLS1_2',ssl.TLSVersion.TLSv1_2),('TLS1_3',ssl.TLSVersion.TLSv1_3)):
+                for attempt in (1,2):
+                    observation={'target':index,'tls_version':version_label,'attempt':attempt}
+                    conn=None
+                    phase='TCP'
+                    started=clock()
+                    try:
+                        conn=socket.socket(family,kind,proto)
+                        conn.settimeout(2.5)
+                        conn.connect(address)
+                        observation['tcp_ms']=round((clock()-started)*1000)
+                        phase='TLS'
+                        started=clock()
+                        context=ssl.create_default_context()
+                        context.minimum_version=version
+                        context.maximum_version=version
+                        # wrap_socket performs a certificate-verified handshake with ledger SNI.
+                        with context.wrap_socket(conn,server_hostname=hostname) as tls:
+                            conn=None
+                            observation['tls_ms']=round((clock()-started)*1000)
+                        observation.update({'phase':'TLS','status':'PASS'})
+                    except (TimeoutError,socket.timeout):
+                        observation.update({'phase':phase,'status':'TIMEOUT'})
+                        observation[phase.lower()+'_ms']=round((clock()-started)*1000)
+                    except ssl.SSLError:
+                        observation.update({'phase':'TLS','status':'TLS_ERROR'})
+                    except OSError:
+                        observation.update({'phase':phase,'status':'NETWORK_ERROR'})
+                    finally:
+                        if conn is not None:
+                            conn.close()
+                    outcomes.append(observation)
+        return {'probe':'TLS_DIFFERENTIAL_RESULTS','dns_ms':dns_ms,'targets':len(targets),'attempts':outcomes}
     def reserve(self,ticket,cid,digest,expiry):
         status,data=self.call('reserve',{'ticket':ticket,'challenge_id':cid,'envelope_sha256':digest,'expires_at':expiry})
         return status==201 and data=={'reserved':True}
@@ -265,6 +329,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(200,self.relay.ledger.probe_environment_egress())
                 if raw==b'{"mode":"phases"}':
                     return self.reply(200,self.relay.ledger.probe_connection_phases())
+                if raw==b'{"mode":"tls-differential"}':
+                    return self.reply(200,self.relay.ledger.probe_tls_differential())
                 return self.reply(400,{'error':'INVALID_PROBE'})
             if route=='/v1/test-submit':
                 if not synthetic_capture(raw):return self.reply(400,{'error':'SYNTHETIC_CAPTURE_REQUIRED'})
