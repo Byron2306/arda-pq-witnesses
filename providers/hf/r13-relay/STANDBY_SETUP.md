@@ -16,12 +16,12 @@ Both `POST /v1/submit` and `POST /v1/claim` return HTTP 503
 `RELAY_STANDBY`. No secret is needed, no ledger is opened, and no evidence
 is accepted or sent to GitHub.
 
-**Do not turn off standby merely to clear an error.** The Xet bucket is
-object storage, not proven SQLite transactional storage. The current SQLite
-WAL replay ledger MUST NOT run against a bucket mount without validated
-locking, consistency and crash-recovery guarantees. Replace it with an
-approved transactional state service and exercise crash/restart, concurrent
-claim and duplicate-challenge tests before enabling intake.
+**Do not turn off standby merely to clear an error.** The Xet bucket is object storage, not a suitable SQLite WAL replay ledger.
+V4 now uses the separate Cloudflare SQLite-backed Durable Object found in
+`cloudflare/r13-relay-ledger/`. Keep standby enabled until that Worker is deployed,
+its authentication and crash/restart behavior are verified, and the HF relay
+has been updated to use `ARDA_RELAY_LEDGER_URL` and `ARDA_RELAY_LEDGER_TOKEN`.
+The test double in CI is not a substitute for live DO fault-injection tests.
 
 On HF Space upload, use the updated `gateway.py` from PR #14:
 `providers/hf/r13-relay/gateway.py`. The Space root has `Dockerfile`,
