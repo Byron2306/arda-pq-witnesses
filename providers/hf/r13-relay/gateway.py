@@ -288,6 +288,24 @@ class Relay:
             return {'probe':'GITHUB_REPO_HTTP','http':exc.code,'push':None}
         except (urllib.error.URLError,TimeoutError,OSError,ValueError):
             return {'probe':'GITHUB_REPO_TRANSPORT_FAILURE'}
+    def probe_github_dispatch_write(self):
+        """One diagnostic GitHub POST, never a V4/V6 capture or ledger reservation.
+
+        The diagnostic event type is deliberately absent from every repository
+        workflow's repository_dispatch.types allowlist (audit before deployment).
+        """
+        payload={'event_type':'arda_r13_dispatch_permission_probe_v1',
+                 'client_payload':{'schema':'arda.r13.dispatch_permission_probe.v1'}}
+        try:
+            self._dispatch(payload)
+            return {'probe':'GITHUB_DISPATCH_HTTP','http':204,'ledger':'NOT_ATTEMPTED'}
+        except RelayStageError as exc:
+            result={'probe':'GITHUB_DISPATCH_HTTP','stage':exc.stage,
+                    'ledger':'NOT_ATTEMPTED'}
+            if exc.http_status is not None:
+                result['http']=exc.http_status
+            return result
+
     def submit_v6_synthetic(self,raw):
         """Dispatch encrypted synthetic capture to GitHub; GitHub owns reserve+claim.
 
@@ -384,6 +402,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(200,self.relay.ledger.probe_tls_differential())
                 if raw==b'{"mode":"github-permission"}':
                     return self.reply(200,self.relay.probe_github_dispatch_permission())
+                if raw==b'{"mode":"github-dispatch-write"}':
+                    if os.environ.get('ARDA_RELAY_TEST_BACKEND')!='github-v6':
+                        return self.reply(403,{'error':'V6_BACKEND_REQUIRED','interlock':'KEEP_CLOSED'})
+                    return self.reply(200,self.relay.probe_github_dispatch_write())
                 return self.reply(400,{'error':'INVALID_PROBE'})
             if route=='/v1/test-submit':
                 if not synthetic_capture(raw):return self.reply(400,{'error':'SYNTHETIC_CAPTURE_REQUIRED'})
