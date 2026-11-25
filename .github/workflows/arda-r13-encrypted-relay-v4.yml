@@ -1,0 +1,66 @@
+name: ARDA R13 encrypted relay V4 (non-authoritative)
+run-name: R13 encrypted one-time receipt review
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/arda-r13-encrypted-relay-v4.yml"
+      - "providers/hf/r13-relay/**"
+      - "cloudflare/r13-relay-ledger/**"
+      - "tools/r13_offhost_gate/**"
+  repository_dispatch:
+    types: [arda_r13_capture_v4]
+permissions:
+  contents: read
+concurrency:
+  group: arda-r13-relay-v4
+  cancel-in-progress: false
+jobs:
+  unit_tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Exercise Cloudflare Durable Object ledger contract (simulated SQL)
+        run: node --test cloudflare/r13-relay-ledger/src/worker.test.mjs
+      - name: Prepare dependency and test
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --disable-pip-version-check 'cryptography==46.0.7'
+          "$RUNNER_TEMP/venv/bin/python" -m unittest discover -s tools/r13_offhost_gate -p 'test_*.py' -v
+  verify_relay:
+    if: github.event_name == 'repository_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Install isolated crypto dependency
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --disable-pip-version-check 'cryptography==46.0.7'
+      - name: Run existing V3 and V4 regression tests
+        run: |
+          "$RUNNER_TEMP/venv/bin/python" -m unittest discover -s tools/r13_offhost_gate -p 'test_*.py' -v
+      - name: Claim and verify one-time encrypted capture
+        env:
+          ARDA_RELAY_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+          ARDA_RELAY_CLAIM_TOKEN: ${{ secrets.ARDA_RELAY_CLAIM_TOKEN }}
+          ARDA_RELAY_PRIVATE_B64: ${{ secrets.ARDA_RELAY_PRIVATE_B64 }}
+          ARDA_RELAY_BASE_URL: ${{ vars.ARDA_RELAY_BASE_URL }}
+          ARDA_R13_NODE_ID: ${{ vars.ARDA_R13_NODE_ID }}
+          ARDA_R13_VERIFIER_ID: ${{ vars.ARDA_R13_VERIFIER_ID }}
+          ARDA_RESULT_PATH: ${{ runner.temp }}/arda-r13-v4/result.json
+        run: |
+          "$RUNNER_TEMP/venv/bin/python" tools/r13_offhost_gate/relay_review.py
+          cat "$RUNNER_TEMP/arda-r13-v4/result.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload redacted review metadata only
+        uses: actions/upload-artifact@v6
+        with:
+          name: arda-r13-encrypted-relay-v4-review
+          path: ${{ runner.temp }}/arda-r13-v4/result.json
+          if-no-files-found: error
+          retention-days: 7
