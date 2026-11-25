@@ -31,6 +31,8 @@ class GitHubLedger:
             or parsed.password or parsed.port not in (None,443)
             or parsed.path not in ('','/') or parsed.query or parsed.fragment):
             raise ValueError('INVALID_LEDGER_ORIGIN')
+        if parsed.hostname!='arda-r13-relay-ledger.dio-workflows.workers.dev':
+            raise ValueError('LEDGER_ORIGIN_NOT_ENROLLED')
         if not isinstance(token,str) or len(token)<40:
             raise ValueError('INVALID_LEDGER_TOKEN')
         self.origin=origin.rstrip('/')
