@@ -122,6 +122,54 @@ class DurableLedger:
             return {'probe':'ENVIRONMENT_ROUTE_FAILURE','category':'TIMEOUT'}
         except OSError:
             return {'probe':'ENVIRONMENT_ROUTE_FAILURE','category':'NETWORK'}
+    def probe_connection_phases(self):
+        """Diagnostic only: DNS/TCP/TLS for the enrolled ledger origin, no HTTP or bearer."""
+        hostname=urlsplit(self.url).hostname
+        if not hostname:
+            return {'probe':'PHASE_REFUSE','phase':'CONFIGURATION'}
+        def ms(start):
+            return round((time.monotonic()-start)*1000)
+        started=time.monotonic()
+        try:
+            addresses=socket.getaddrinfo(hostname,443,type=socket.SOCK_STREAM)
+        except socket.gaierror:
+            return {'probe':'PHASE_REFUSE','phase':'DNS','category':'RESOLUTION_FAILED','dns_ms':ms(started)}
+        except OSError:
+            return {'probe':'PHASE_REFUSE','phase':'DNS','category':'NETWORK','dns_ms':ms(started)}
+        dns_ms=ms(started)
+        # Attempt one distinct IPv4 and IPv6 address each, without disclosing IPs.
+        selected={}
+        for family,kind,proto,_,address in addresses:
+            if family in (socket.AF_INET,socket.AF_INET6) and family not in selected:
+                selected[family]=(kind,proto,address)
+        if not selected:
+            return {'probe':'PHASE_REFUSE','phase':'DNS','category':'NO_SUPPORTED_ADDRESS','dns_ms':dns_ms}
+        results=[]
+        for family,(kind,proto,address) in selected.items():
+            label='IPV4' if family==socket.AF_INET else 'IPV6'
+            start=time.monotonic()
+            conn=None
+            try:
+                conn=socket.socket(family,kind,proto)
+                conn.settimeout(2.5)
+                conn.connect(address)
+                tcp_ms=ms(start)
+                start=time.monotonic()
+                context=ssl.create_default_context()
+                with context.wrap_socket(conn,server_hostname=hostname) as tls:
+                    conn=None
+                    tls.do_handshake()
+                    tls_ms=ms(start)
+                results.append({'family':label,'phase':'TLS','status':'PASS','tcp_ms':tcp_ms,'tls_ms':tls_ms})
+            except (socket.timeout,TimeoutError):
+                results.append({'family':label,'phase':'TCP_OR_TLS','status':'TIMEOUT'})
+            except ssl.SSLError:
+                results.append({'family':label,'phase':'TLS','status':'TLS_ERROR'})
+            except OSError:
+                results.append({'family':label,'phase':'TCP_OR_TLS','status':'NETWORK_ERROR'})
+            finally:
+                if conn is not None: conn.close()
+        return {'probe':'PHASE_RESULTS','dns_ms':dns_ms,'routes':results}
     def reserve(self,ticket,cid,digest,expiry):
         status,data=self.call('reserve',{'ticket':ticket,'challenge_id':cid,'envelope_sha256':digest,'expires_at':expiry})
         return status==201 and data=={'reserved':True}
@@ -210,6 +258,8 @@ class Handler(BaseHTTPRequestHandler):
                 if raw==b'{}':return self.reply(200,self.relay.ledger.probe_transport())
                 if raw==b'{"mode":"environment"}':
                     return self.reply(200,self.relay.ledger.probe_environment_egress())
+                if raw==b'{"mode":"phases"}':
+                    return self.reply(200,self.relay.ledger.probe_connection_phases())
                 return self.reply(400,{'error':'INVALID_PROBE'})
             if route=='/v1/test-submit':
                 if not synthetic_capture(raw):return self.reply(400,{'error':'SYNTHETIC_CAPTURE_REQUIRED'})
