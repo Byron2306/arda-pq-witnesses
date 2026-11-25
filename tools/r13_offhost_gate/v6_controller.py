@@ -172,7 +172,22 @@ def submit(client,record,persist):
         return 'V6_DISPATCH_HTTP=202_ACCEPTED_REVIEW_PENDING'
     record['phase']='DISPATCH_REFUSED'
     record['http_status']=code
-    return 'V6_DISPATCH=REFUSED_HTTP_'+str(code)
+    # Only allowlisted diagnostic fields from the gateway, never a raw error body.
+    if type(payload) is dict:
+        if payload.get('error') in ('RELAY_UNAVAILABLE','RELAY_STANDBY','SYNTHETIC_CAPTURE_REQUIRED',
+                                    'INVALID_REQUEST','UNAUTHORIZED','CONTENT_TYPE','SIZE'):
+            record['gateway_error']=payload['error']
+        if payload.get('stage') in ('GITHUB_HTTP_REFUSAL','GITHUB_TRANSPORT_FAILURE',
+                                    'GITHUB_BAD_RESPONSE'):
+            record['gateway_stage']=payload['stage']
+        upstream=payload.get('upstream_http_status')
+        if type(upstream) is int and 400<=upstream<=599:
+            record['upstream_http_status']=upstream
+    summary='V6_DISPATCH=REFUSED_HTTP_'+str(code)
+    if 'gateway_error' in record:summary+=' GATEWAY_ERROR='+record['gateway_error']
+    if 'gateway_stage' in record:summary+=' GATEWAY_STAGE='+record['gateway_stage']
+    if 'upstream_http_status' in record:summary+=' UPSTREAM_HTTP='+str(record['upstream_http_status'])
+    return summary
 
 def close_window(client,record):
     # Repeatable cleanup, including following a crash before local state was updated.
@@ -229,6 +244,8 @@ def main(argv=None):
             persist()
             print(result,flush=True)
             print('GEN14_INTERLOCK=KEEP_CLOSED',flush=True)
+            if args.command=='submit' and record['phase']!='DISPATCH_ACCEPTED':
+                return 1
         except (Refuse,AssertionError) as exc:
             persist()
             print('REFUSE_'+str(exc),flush=True)
