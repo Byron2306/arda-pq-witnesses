@@ -30,6 +30,7 @@ class StageTests(unittest.TestCase):
         with patch('gateway.urllib.request.build_opener',return_value=HTTPRefusal(403)):
             with self.assertRaises(RelayStageError) as e:r._dispatch({'event_type':'test'})
         self.assertEqual(e.exception.stage,'GITHUB_HTTP_REFUSAL')
+        self.assertEqual(e.exception.http_status,403)
         self.assertNotIn('SECRET',str(e.exception))
     def test_github_network(self):
         r=Relay({'ARDA_RELAY_GITHUB_REPO':'Byron2306/arda-pq-witnesses','ARDA_RELAY_GITHUB_TOKEN':'SECRET'},b'0'*32,None)
@@ -48,3 +49,19 @@ class StageTests(unittest.TestCase):
         with patch('gateway.active',return_value=True),patch('gateway.synthetic_capture',return_value=True):
             h.do_POST()
         self.assertEqual(answers,[(503,{'error':'RELAY_UNAVAILABLE','stage':'LEDGER_HTTP_REFUSAL','interlock':'KEEP_CLOSED'})])
+
+    def test_handler_reports_only_github_status_no_provider_body(self):
+        class Fake:
+            cfg={'ARDA_RELAY_INGEST_TOKEN':'x'*64}
+            def submit(self,raw):raise RelayStageError('GITHUB_HTTP_REFUSAL',http_status=403)
+        h=object.__new__(Handler)
+        h.path='/v1/test-submit';h.test_until=9999999999;h.relay=Fake()
+        h.headers={'Authorization':'Bearer '+('x'*64),'Content-Type':'application/json','Content-Length':'2'}
+        h.rfile=io.BytesIO(b'{}')
+        answers=[];h.reply=lambda code,data:answers.append((code,data))
+        with patch('gateway.active',return_value=True),patch('gateway.synthetic_capture',return_value=True):
+            h.do_POST()
+        self.assertEqual(answers,[(503,{'error':'RELAY_UNAVAILABLE','stage':'GITHUB_HTTP_REFUSAL','interlock':'KEEP_CLOSED','upstream_http_status':403})])
+    def test_invalid_upstream_status_refused(self):
+        with self.assertRaisesRegex(ValueError,'INVALID_HTTP_STATUS'):
+            RelayStageError('GITHUB_HTTP_REFUSAL',http_status=204)

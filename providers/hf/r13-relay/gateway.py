@@ -17,14 +17,17 @@ MAX_CAPTURE=32768
 
 class RelayStageError(RuntimeError):
     """Static stage code only. Never embed provider bodies, tokens or URLs."""
-    def __init__(self, stage):
+    def __init__(self, stage, *, http_status=None):
         if stage not in {
             'LEDGER_HTTP_REFUSAL', 'LEDGER_TRANSPORT_FAILURE',
             'LEDGER_BAD_RESPONSE', 'GITHUB_HTTP_REFUSAL',
             'GITHUB_TRANSPORT_FAILURE', 'GITHUB_BAD_RESPONSE',
         }:
             raise ValueError('INVALID_STAGE_CODE')
+        if http_status is not None and (type(http_status) is not int or not 400<=http_status<=599):
+            raise ValueError('INVALID_HTTP_STATUS')
         self.stage=stage
+        self.http_status=http_status
         super().__init__(stage)
 
 def require_config():
@@ -144,7 +147,7 @@ class Relay:
                 if response.status!=204:raise RelayStageError('GITHUB_BAD_RESPONSE')
         except urllib.error.HTTPError as exc:
             with exc: pass
-            raise RelayStageError('GITHUB_HTTP_REFUSAL') from None
+            raise RelayStageError('GITHUB_HTTP_REFUSAL',http_status=exc.code) from None
         except (urllib.error.URLError,TimeoutError,OSError) as exc:
             raise RelayStageError('GITHUB_TRANSPORT_FAILURE') from None
 
@@ -190,7 +193,11 @@ class Handler(BaseHTTPRequestHandler):
             accepted=self.relay.claim(req['ticket'],req['envelope_sha256'])
             return self.reply(200 if accepted else 409,{'claimed':accepted})
         except (ValueError,KeyError,TypeError,json.JSONDecodeError):return self.reply(400,{'error':'INVALID_REQUEST'})
-        except RelayStageError as exc:return self.reply(503,{'error':'RELAY_UNAVAILABLE','stage':exc.stage,'interlock':'KEEP_CLOSED'})
+        except RelayStageError as exc:
+            payload={'error':'RELAY_UNAVAILABLE','stage':exc.stage,'interlock':'KEEP_CLOSED'}
+            if exc.stage=='GITHUB_HTTP_REFUSAL' and exc.http_status is not None:
+                payload['upstream_http_status']=exc.http_status
+            return self.reply(503,payload)
         except (urllib.error.URLError,RuntimeError,OSError):return self.reply(503,{'error':'RELAY_UNAVAILABLE','interlock':'KEEP_CLOSED'})
 
 def main():
