@@ -1,6 +1,11 @@
 name: ARDA R13 encrypted relay V4 (non-authoritative)
 run-name: R13 encrypted one-time receipt review
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/arda-r13-encrypted-relay-v4.yml"
+      - "providers/hf/r13-relay/**"
+      - "tools/r13_offhost_gate/**"
   repository_dispatch:
     types: [arda_r13_capture_v4]
 permissions:
@@ -9,7 +14,21 @@ concurrency:
   group: arda-r13-relay-v4
   cancel-in-progress: false
 jobs:
+  unit_tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Prepare dependency and test
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --disable-pip-version-check 'cryptography==46.0.7'
+          "$RUNNER_TEMP/venv/bin/python" -m unittest discover -s tools/r13_offhost_gate -p 'test_*.py' -v
   verify_relay:
+    if: github.event_name == 'repository_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 7
     steps:
