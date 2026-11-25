@@ -1,0 +1,39 @@
+name: ARDA R13 hosted cryptographic review V3 (non-authoritative)
+run-name: R13 hosted receipt verification
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: arda-r13-hosted-crypto-v3
+  cancel-in-progress: false
+jobs:
+  verify_receipt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Install isolated crypto dependency
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --disable-pip-version-check 'cryptography>=41,<47'
+      - name: Run V3 adversarial contract tests
+        run: "$RUNNER_TEMP/venv/bin/python" -m unittest discover -s tools/r13_offhost_gate -p 'test_*.py' -v
+      - name: Verify signed Cloudflare R13 archive if available
+        env:
+          ARDA_R13_CAPTURE_B64: ${{ secrets.ARDA_R13_CAPTURE_B64 }}
+          ARDA_R13_NODE_ID: ${{ vars.ARDA_R13_NODE_ID }}
+          ARDA_R13_VERIFIER_ID: ${{ vars.ARDA_R13_VERIFIER_ID }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/arda-r13-v3"
+          "$RUNNER_TEMP/venv/bin/python" tools/r13_offhost_gate/verify_capture.py --output "$RUNNER_TEMP/arda-r13-v3/result.json"
+          cat "$RUNNER_TEMP/arda-r13-v3/result.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload safe receipt metadata only
+        uses: actions/upload-artifact@v6
+        with:
+          name: arda-r13-crypto-v3-review
+          path: ${{ runner.temp }}/arda-r13-v3/result.json
+          if-no-files-found: error
+          retention-days: 7
