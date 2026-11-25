@@ -349,7 +349,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length',str(len(body)))
         self.end_headers();self.wfile.write(body)
     def do_GET(self):
-        if urlsplit(self.path).path=='/health':self.reply(200,{'status':'test_window' if active(self.test_until) else 'standby' if self.relay is None or self.test_until is not None else 'up','ingest_enabled':self.relay is not None and self.test_until is None,'synthetic_test_enabled':active(self.test_until),'phase4_authorized':False,'interlock':'KEEP_CLOSED'})
+        if urlsplit(self.path).path=='/health':
+            running=active(self.test_until)
+            status='test_window' if running else 'standby' if self.relay is None or self.test_until is not None else 'up'
+            payload={'status':status,'ingest_enabled':self.relay is not None and self.test_until is None,
+                     'synthetic_test_enabled':running,'phase4_authorized':False,'interlock':'KEEP_CLOSED'}
+            if running:
+                # Non-secret marker ties readiness to the exact live process configuration.
+                payload['test_deadline']=self.test_until
+                payload['test_backend']=os.environ.get('ARDA_RELAY_TEST_BACKEND','legacy')
+            self.reply(200,payload)
         else:self.reply(404,{'error':'NOT_FOUND'})
     def do_POST(self):
         route=urlsplit(self.path).path
