@@ -4,6 +4,8 @@ import json
 import os
 import secrets
 import time
+import socket
+import ssl
 import urllib.request
 import urllib.error
 from urllib.parse import urlsplit
@@ -63,6 +65,35 @@ class DurableLedger:
             raise RelayStageError('LEDGER_TRANSPORT_FAILURE') from None
         except (ValueError,TypeError) as exc:
             raise RelayStageError('LEDGER_BAD_RESPONSE') from None
+    def probe_transport(self):
+        """Authenticated, non-mutating ledger probe: invalid claim cannot change SQL."""
+        request=urllib.request.Request(self.url+'/claim',data=b'{}',method='POST',
+            headers={'Authorization':'Bearer '+self.token,'Content-Type':'application/json',
+                     'User-Agent':'arda-r13-relay-ledger/1'})
+        try:
+            with self.opener.open(request,timeout=5) as response:
+                return {'probe':'UNEXPECTED_SUCCESS','http':response.status}
+        except urllib.error.HTTPError as exc:
+            with exc:
+                # 400 INVALID_CLAIM is the expected authenticated, nonmutating path.
+                try: body=json.loads(exc.read(512))
+                except (ValueError,TypeError): body={}
+                if exc.code==400 and body=={'claimed':False,'error':'INVALID_CLAIM'}:
+                    return {'probe':'LEDGER_REACHABLE','http':400}
+                # Never return upstream body/headers: they may contain untrusted data.
+                return {'probe':'LEDGER_HTTP_REFUSAL','http':exc.code}
+        except urllib.error.URLError as exc:
+            reason=exc.reason
+            if isinstance(reason,socket.gaierror): category='DNS'
+            elif isinstance(reason,ssl.SSLError): category='TLS'
+            elif isinstance(reason,(TimeoutError,socket.timeout)): category='TIMEOUT'
+            elif isinstance(reason,ConnectionRefusedError): category='CONNECTION_REFUSED'
+            else: category='NETWORK'
+            return {'probe':'LEDGER_TRANSPORT_FAILURE','category':category}
+        except (TimeoutError,socket.timeout):
+            return {'probe':'LEDGER_TRANSPORT_FAILURE','category':'TIMEOUT'}
+        except OSError:
+            return {'probe':'LEDGER_TRANSPORT_FAILURE','category':'NETWORK'}
     def reserve(self,ticket,cid,digest,expiry):
         status,data=self.call('reserve',{'ticket':ticket,'challenge_id':cid,'envelope_sha256':digest,'expires_at':expiry})
         return status==201 and data=={'reserved':True}
@@ -135,10 +166,10 @@ class Handler(BaseHTTPRequestHandler):
         else:self.reply(404,{'error':'NOT_FOUND'})
     def do_POST(self):
         route=urlsplit(self.path).path
-        if route not in ('/v1/submit','/v1/claim','/v1/test-submit'):return self.reply(404,{'error':'NOT_FOUND'})
-        if self.relay is None or (self.test_until is not None and (not active(self.test_until) or route=='/v1/submit')) or (self.test_until is None and route=='/v1/test-submit'):
+        if route not in ('/v1/submit','/v1/claim','/v1/test-submit','/v1/test-ledger-probe'):return self.reply(404,{'error':'NOT_FOUND'})
+        if self.relay is None or (self.test_until is not None and (not active(self.test_until) or route=='/v1/submit')) or (self.test_until is None and route in ('/v1/test-submit','/v1/test-ledger-probe')):
             return self.reply(503,{'error':'RELAY_STANDBY','interlock':'KEEP_CLOSED'})
-        key='ARDA_RELAY_INGEST_TOKEN' if route in ('/v1/submit','/v1/test-submit') else 'ARDA_RELAY_CLAIM_TOKEN'
+        key='ARDA_RELAY_INGEST_TOKEN' if route in ('/v1/submit','/v1/test-submit','/v1/test-ledger-probe') else 'ARDA_RELAY_CLAIM_TOKEN'
         bearer=self.headers.get('Authorization','')
         if not hmac.compare_digest(bearer,'Bearer '+self.relay.cfg[key]):return self.reply(401,{'error':'UNAUTHORIZED'})
         cap=MAX_CAPTURE if route in ('/v1/submit','/v1/test-submit') else 1024
@@ -147,6 +178,9 @@ class Handler(BaseHTTPRequestHandler):
             length=int(self.headers.get('Content-Length','-1'))
             if not 0<length<=cap:return self.reply(413,{'error':'SIZE'})
             raw=self.rfile.read(length)
+            if route=='/v1/test-ledger-probe':
+                if raw!=b'{}':return self.reply(400,{'error':'INVALID_PROBE'})
+                return self.reply(200,self.relay.ledger.probe_transport())
             if route=='/v1/test-submit':
                 if not synthetic_capture(raw):return self.reply(400,{'error':'SYNTHETIC_CAPTURE_REQUIRED'})
                 return self.reply(202,self.relay.submit(raw))
