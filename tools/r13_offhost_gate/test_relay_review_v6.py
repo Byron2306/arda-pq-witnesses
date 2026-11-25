@@ -112,5 +112,57 @@ class V6Review(unittest.TestCase):
         ledger=GitHubLedger('https://example.com','x'*64)
         ledger.opener=Opener()
         self.assertFalse(ledger.reserve('a'*48,'b'*32,'c'*64,NOW+120))
+    def test_hf_v6_dispatch_does_not_contact_cloudflare(self):
+        from crypto_box import unseal
+        from gateway import Relay
+        item,key=fixture()
+        private=base64.b64decode(key)
+        public=x25519.X25519PrivateKey.from_private_bytes(private).public_key().public_bytes(
+            serialization.Encoding.Raw,serialization.PublicFormat.Raw)
+        raw=unseal(item['box'],private)
+        class ForbiddenLedger:
+            def reserve(self,*args):raise AssertionError('HF must not reserve')
+            def claim(self,*args):raise AssertionError('HF must not claim')
+        dispatched=[]
+        relay=Relay({},public,ForbiddenLedger(),dispatch=dispatched.append,clock=lambda:NOW)
+        result=relay.submit_v6_synthetic(raw)
+        self.assertTrue(result['accepted'])
+        self.assertEqual(len(dispatched),1)
+        self.assertEqual(dispatched[0]['event_type'],'arda_r13_capture_v6')
+        self.assertEqual(dispatched[0]['client_payload']['schema'],'arda.r13.relay_dispatch.v2')
+        self.assertEqual(dispatched[0]['client_payload']['challenge_id'],item['challenge_id'])
+    def test_hf_v6_rejects_real_capture_before_dispatch(self):
+        from crypto_box import unseal
+        from gateway import Relay
+        item,key=fixture(synthetic=False)
+        private=base64.b64decode(key)
+        public=x25519.X25519PrivateKey.from_private_bytes(private).public_key().public_bytes(
+            serialization.Encoding.Raw,serialization.PublicFormat.Raw)
+        raw=unseal(item['box'],private)
+        dispatched=[]
+        relay=Relay({},public,None,dispatch=dispatched.append,clock=lambda:NOW)
+        with self.assertRaises(ValueError):
+            relay.submit_v6_synthetic(raw)
+        self.assertEqual(dispatched,[])
+    def test_github_permission_probe_no_dispatch_and_redacted(self):
+        from gateway import Relay
+        from unittest.mock import patch
+        class Response:
+            status=200
+            def __enter__(self):return self
+            def __exit__(self,*args):return False
+            def read(self,n):return b'{"permissions":{"push":true},"secret":"DO_NOT_SHOW"}'
+        class Opener:
+            def open(self,request,timeout):
+                self.request=request
+                return Response()
+        opener=Opener()
+        relay=Relay({'ARDA_RELAY_GITHUB_REPO':'Byron2306/arda-pq-witnesses',
+            'ARDA_RELAY_GITHUB_TOKEN':'SECRET_GITHUB_TOKEN'},b'',None)
+        with patch('gateway.urllib.request.build_opener',return_value=opener):
+            outcome=relay.probe_github_dispatch_permission()
+        self.assertEqual(outcome,{'probe':'GITHUB_REPO_HTTP','http':200,'push':True})
+        self.assertEqual(opener.request.get_method(),'GET')
+        self.assertNotIn('SECRET',repr(outcome))
 if __name__=='__main__':
     unittest.main()
