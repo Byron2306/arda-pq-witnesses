@@ -6,6 +6,8 @@ on:
       - ".github/workflows/arda-r13-github-ledger-v6.yml"
       - "tools/r13_offhost_gate/relay_review_v6.py"
       - "tools/r13_offhost_gate/test_relay_review_v6.py"
+      - "tools/r13_offhost_gate/v6_controller.py"
+      - "tools/r13_offhost_gate/test_v6_controller.py"
       - "providers/hf/r13-relay/gateway.py"
   repository_dispatch:
     types: [arda_r13_capture_v6]
