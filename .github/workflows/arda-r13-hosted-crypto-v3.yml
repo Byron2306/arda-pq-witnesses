@@ -20,7 +20,8 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/python" -m pip install --disable-pip-version-check 'cryptography>=41,<47'
       - name: Run V3 adversarial contract tests
-        run: "$RUNNER_TEMP/venv/bin/python" -m unittest discover -s tools/r13_offhost_gate -p 'test_*.py' -v
+        run: |
+          "$RUNNER_TEMP/venv/bin/python" -m unittest discover -s tools/r13_offhost_gate -p 'test_*.py' -v
       - name: Verify signed Cloudflare R13 archive if available
         env:
           ARDA_R13_CAPTURE_B64: ${{ secrets.ARDA_R13_CAPTURE_B64 }}
