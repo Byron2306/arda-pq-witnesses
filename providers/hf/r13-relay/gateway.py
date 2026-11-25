@@ -267,6 +267,27 @@ class Relay:
     def __init__(self,cfg,pub,ledger,dispatch=None,clock=time.time):
         self.cfg,self.pub,self.ledger,self.clock=cfg,pub,ledger,clock
         self.dispatch=dispatch or self._dispatch
+    def submit_v6_synthetic(self,raw):
+        """Dispatch encrypted synthetic capture to GitHub; GitHub owns reserve+claim.
+
+        Called ONLY from the bounded synthetic endpoint. Never authorizes real R13.
+        """
+        if not synthetic_capture(raw):
+            raise ValueError('V6_SYNTHETIC_ONLY')
+        now=int(self.clock())
+        cid,expiry=extract_fresh_challenge(raw,now)
+        box=seal(raw,self.pub)
+        ticket=secrets.token_hex(24)
+        digest=hash_envelope(box)
+        payload={'event_type':'arda_r13_capture_v6','client_payload':{
+            'schema':'arda.r13.relay_dispatch.v2','ticket':ticket,
+            'challenge_id':cid,'expires_at':expiry,'envelope_sha256':digest,'box':box}}
+        if len(canonical(payload))>60000:
+            raise ValueError('GITHUB_DISPATCH_SIZE')
+        self.dispatch(payload)
+        return {'schema':'arda.r13.relay_submission.v1','accepted':True,
+                'interlock':'KEEP_CLOSED'}
+
     def submit(self,raw):
         now=int(self.clock());cid,expiry=extract_fresh_challenge(raw,now)
         box=seal(raw,self.pub);ticket=secrets.token_hex(24);digest=hash_envelope(box)
@@ -334,6 +355,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(400,{'error':'INVALID_PROBE'})
             if route=='/v1/test-submit':
                 if not synthetic_capture(raw):return self.reply(400,{'error':'SYNTHETIC_CAPTURE_REQUIRED'})
+                if os.environ.get('ARDA_RELAY_TEST_BACKEND')=='github-v6':
+                    return self.reply(202,self.relay.submit_v6_synthetic(raw))
                 return self.reply(202,self.relay.submit(raw))
             if route=='/v1/submit':return self.reply(202,self.relay.submit(raw))
             req=json.loads(raw)
