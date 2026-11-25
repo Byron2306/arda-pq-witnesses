@@ -13,7 +13,9 @@ def deadline(env, *, now=None):
         raise RuntimeError("TEST_REQUIRES_STANDBY")
     try: until=int(raw)
     except ValueError: raise RuntimeError("INVALID_TEST_DEADLINE") from None
-    if not now<until<=now+MAX_WINDOW:
+    if until<=now:
+        return None  # expired window boots directly into ordinary standby
+    if until>now+MAX_WINDOW:
         raise RuntimeError("TEST_DEADLINE_NOT_BOUNDED")
     return until
 
