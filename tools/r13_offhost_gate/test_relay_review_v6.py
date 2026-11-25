@@ -101,6 +101,9 @@ class V6Review(unittest.TestCase):
                     'https://example.com/bad','https://example.com?secret=1'):
             with self.subTest(url=url),self.assertRaises(ValueError):
                 GitHubLedger(url,'x'*64)
+    def test_github_ledger_rejects_unenrolled_https_origin(self):
+        with self.assertRaises(ValueError):
+            GitHubLedger('https://other-service.example','x'*64)
     def test_ledger_responses_are_exact(self):
         class Response:
             status=201
@@ -109,7 +112,7 @@ class V6Review(unittest.TestCase):
             def read(self,n):return b'{"reserved":false}'
         class Opener:
             def open(self,request,timeout):return Response()
-        ledger=GitHubLedger('https://example.com','x'*64)
+        ledger=GitHubLedger('https://arda-r13-relay-ledger.dio-workflows.workers.dev','x'*64)
         ledger.opener=Opener()
         self.assertFalse(ledger.reserve('a'*48,'b'*32,'c'*64,NOW+120))
     def test_hf_v6_dispatch_does_not_contact_cloudflare(self):
