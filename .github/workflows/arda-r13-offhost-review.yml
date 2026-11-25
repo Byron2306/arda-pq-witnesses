@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
       - name: Verify offline guard tests
@@ -23,7 +23,7 @@ jobs:
           python3 tools/r13_offhost_gate/gate.py --output "$RUNNER_TEMP/arda-r13-review/result.json"
           cat "$RUNNER_TEMP/arda-r13-review/result.json" >> "$GITHUB_STEP_SUMMARY"
       - name: Store gate receipt without host evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: arda-r13-offhost-review-refusal
           path: ${{ runner.temp }}/arda-r13-review/result.json
