@@ -57,3 +57,23 @@ class TestProbe(unittest.TestCase):
         output=[];h.reply=lambda status,data:output.append((status,data))
         with patch('gateway.active',return_value=True):h.do_POST()
         self.assertEqual(output,[(400,{'error':'INVALID_PROBE'})])
+
+    def test_environment_probe_never_sends_ledger_bearer(self):
+        class SafeOpener:
+            def open(self,request,**kwargs):
+                self.request=request
+                raise urllib.error.HTTPError('https://example.invalid',401,'no credentials',{},io.BytesIO(b''))
+        opener=SafeOpener()
+        ledger=DurableLedger('https://example.invalid','SECRET_LEDGER_TOKEN',opener=Response400())
+        with patch('gateway.urllib.request.build_opener',return_value=opener):
+            got=ledger.probe_environment_egress()
+        self.assertEqual(got,{'probe':'ENVIRONMENT_ROUTE_HTTP','http':401})
+        self.assertNotIn('Authorization',opener.request.headers)
+        self.assertNotIn('SECRET_LEDGER_TOKEN',repr(got))
+    def test_environment_probe_fails_closed_on_timeout(self):
+        class TimeoutOpener:
+            def open(self,request,**kwargs):
+                raise urllib.error.URLError(TimeoutError('secret detail'))
+        ledger=DurableLedger('https://example.invalid','SECRET_LEDGER_TOKEN')
+        with patch('gateway.urllib.request.build_opener',return_value=TimeoutOpener()):
+            self.assertEqual(ledger.probe_environment_egress(),{'probe':'ENVIRONMENT_ROUTE_FAILURE','category':'TIMEOUT'})
