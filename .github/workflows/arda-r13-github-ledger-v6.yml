@@ -30,6 +30,13 @@ jobs:
       - name: Run regression suite
         run: |
           "$RUNNER_TEMP/venv/bin/python" -m unittest discover -s tools/r13_offhost_gate -p 'test_*.py' -v
+      - name: Prove GitHub runner can reach enrolled Cloudflare ledger (unauthenticated, no writes)
+        run: |
+          set -euo pipefail
+          code="$(curl --noproxy '*' --silent --show-error --max-time 12 --output /dev/null --write-out '%{http_code}' -X POST -H 'Content-Type: application/json' --data-binary '{}' https://arda-r13-relay-ledger.dio-workflows.workers.dev/claim)"
+          test "$code" = 401 || { echo "GITHUB_TO_CLOUDFLARE=REFUSE HTTP=$code"; exit 1; }
+          echo "GITHUB_TO_CLOUDFLARE_TLS_AND_EDGE=PASS"
+          echo "LEDGER_RESERVATION=NOT_ATTEMPTED"
   synthetic_review:
     if: github.event_name == 'repository_dispatch'
     runs-on: ubuntu-24.04
