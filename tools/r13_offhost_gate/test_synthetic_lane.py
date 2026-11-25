@@ -24,6 +24,15 @@ class TestLane(unittest.TestCase):
         v=deadline({'ARDA_RELAY_STANDBY_ONLY':'1','ARDA_RELAY_TEST_UNTIL':str(self.now+120)},now=self.now)
         self.assertTrue(active(v,now=self.now))
         self.assertFalse(active(v,now=self.now+121))
+    def test_expired_deadline_starts_safe_standby(self):
+        val=deadline({'ARDA_RELAY_STANDBY_ONLY':'1','ARDA_RELAY_TEST_UNTIL':str(self.now-1)},now=self.now)
+        self.assertIsNone(val)
+        fake_server=type('FakeServer',(),{'serve_forever':lambda self: None})
+        with patch.dict(os.environ,{'ARDA_RELAY_STANDBY_ONLY':'1','ARDA_RELAY_TEST_UNTIL':str(self.now-1)},clear=True):
+            with patch.object(gateway,'ThreadingHTTPServer',return_value=fake_server()):
+                with patch.object(gateway,'require_config',side_effect=AssertionError('must not read secrets')):
+                    gateway.main()
+        self.assertIsNone(gateway.Handler.relay)
     def test_test_lane_refuses_unmarked_or_nonempty_evidence(self):
         base={'schema':'arda.r13.capture.v2','issued_challenge':{'challenge':{}},'evidence':{},'receipt':{'test_only':MARKER}}
         self.assertTrue(synthetic_capture(json.dumps(base).encode()))
