@@ -2,9 +2,7 @@
 import hmac
 import json
 import os
-from pathlib import Path
 import secrets
-import sqlite3
 import time
 import urllib.request
 import urllib.error
@@ -15,7 +13,7 @@ from crypto_box import unb64, seal, canonical, hash_envelope
 MAX_CAPTURE=32768
 
 def require_config():
-    keys=('ARDA_RELAY_INGEST_TOKEN','ARDA_RELAY_CLAIM_TOKEN','ARDA_RELAY_GITHUB_TOKEN','ARDA_RELAY_GITHUB_REPO','ARDA_RELAY_RECIPIENT_PUBLIC_B64','ARDA_RELAY_STATE_MOUNT')
+    keys=('ARDA_RELAY_INGEST_TOKEN','ARDA_RELAY_CLAIM_TOKEN','ARDA_RELAY_GITHUB_TOKEN','ARDA_RELAY_GITHUB_REPO','ARDA_RELAY_RECIPIENT_PUBLIC_B64','ARDA_RELAY_LEDGER_URL','ARDA_RELAY_LEDGER_TOKEN')
     cfg={key:os.environ.get(key,'') for key in keys}
     if not all(cfg.values()):raise RuntimeError('MISSING_RELAY_CONFIGURATION')
     for name in ('ARDA_RELAY_INGEST_TOKEN','ARDA_RELAY_CLAIM_TOKEN'):
@@ -23,16 +21,39 @@ def require_config():
     if cfg['ARDA_RELAY_INGEST_TOKEN']==cfg['ARDA_RELAY_CLAIM_TOKEN']:raise RuntimeError('TOKEN_REUSE')
     pub=unb64(cfg['ARDA_RELAY_RECIPIENT_PUBLIC_B64'])
     if len(pub)!=32:raise RuntimeError('RECIPIENT_KEY_LENGTH')
-    mount=Path(cfg['ARDA_RELAY_STATE_MOUNT']).resolve(strict=True)
-    if not os.path.ismount(mount):raise RuntimeError('PERSISTENT_VOLUME_REQUIRED')
+    ledger=cfg['ARDA_RELAY_LEDGER_URL']
+    parsed=urlsplit(ledger)
+    if parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in ('','/') or parsed.port not in (None,443):
+        raise RuntimeError('INVALID_LEDGER_ORIGIN')
+    if len(cfg['ARDA_RELAY_LEDGER_TOKEN'])<40:raise RuntimeError('WEAK_LEDGER_TOKEN')
+    if cfg['ARDA_RELAY_LEDGER_TOKEN'] in (cfg['ARDA_RELAY_CLAIM_TOKEN'],cfg['ARDA_RELAY_INGEST_TOKEN']):
+        raise RuntimeError('LEDGER_TOKEN_REUSED')
     if cfg['ARDA_RELAY_GITHUB_REPO']!='Byron2306/arda-pq-witnesses':raise RuntimeError('REPO_NOT_ENROLLED')
-    return cfg,pub,mount/'r13-relay-v1.sqlite3'
-
-def initialize(db):
-    with sqlite3.connect(db,timeout=10) as c:
-        c.execute('PRAGMA journal_mode=WAL')
-        c.execute('PRAGMA synchronous=FULL')
-        c.execute('CREATE TABLE IF NOT EXISTS claims (ticket TEXT PRIMARY KEY, challenge_id TEXT NOT NULL UNIQUE, envelope_sha256 TEXT NOT NULL, expires_at INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0)')
+    return cfg,pub
+class DurableLedger:
+    def __init__(self,url,token,opener=None):
+        self.url=url.rstrip('/')
+        self.token=token
+        self.opener=opener or urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
+    def call(self,kind,body):
+        request=urllib.request.Request(self.url+'/'+kind,data=canonical(body),method='POST',
+            headers={'Authorization':'Bearer '+self.token,'Content-Type':'application/json','User-Agent':'arda-r13-relay-ledger/1'})
+        try:
+            with self.opener.open(request,timeout=5) as response:
+                data=json.loads(response.read(512))
+                return response.status,data
+        except urllib.error.HTTPError as exc:
+            with exc:
+                if exc.code==409:return 409,{}
+            raise RuntimeError('LEDGER_UNAVAILABLE') from None
+        except (urllib.error.URLError,TimeoutError,ValueError,OSError) as exc:
+            raise RuntimeError('LEDGER_UNAVAILABLE') from exc
+    def reserve(self,ticket,cid,digest,expiry):
+        status,data=self.call('reserve',{'ticket':ticket,'challenge_id':cid,'envelope_sha256':digest,'expires_at':expiry})
+        return status==201 and data=={'reserved':True}
+    def claim(self,ticket,digest):
+        status,data=self.call('claim',{'ticket':ticket,'envelope_sha256':digest})
+        return status==200 and data=={'claimed':True}
 
 def extract_fresh_challenge(raw,now):
     if len(raw)>MAX_CAPTURE:raise ValueError('CAPTURE_TOO_LARGE')
@@ -52,30 +73,24 @@ def extract_fresh_challenge(raw,now):
     return cid,expiry
 
 class Relay:
-    def __init__(self,cfg,pub,db,dispatch=None,clock=time.time):
-        self.cfg,self.pub,self.db,self.clock=cfg,pub,db,clock
+    def __init__(self,cfg,pub,ledger,dispatch=None,clock=time.time):
+        self.cfg,self.pub,self.ledger,self.clock=cfg,pub,ledger,clock
         self.dispatch=dispatch or self._dispatch
-        initialize(db)
     def submit(self,raw):
         now=int(self.clock());cid,expiry=extract_fresh_challenge(raw,now)
         box=seal(raw,self.pub);ticket=secrets.token_hex(24);digest=hash_envelope(box)
         payload={'event_type':'arda_r13_capture_v4','client_payload':{'schema':'arda.r13.relay_dispatch.v1','ticket':ticket,'envelope_sha256':digest,'box':box}}
         if len(canonical(payload))>60000:raise ValueError('GITHUB_DISPATCH_SIZE')
-        with sqlite3.connect(self.db,timeout=10,isolation_level=None) as c:
-            c.execute('PRAGMA synchronous=FULL');c.execute('BEGIN IMMEDIATE')
-            if c.execute('SELECT 1 FROM claims WHERE challenge_id=?',(cid,)).fetchone():
-                c.rollback();raise ValueError('CHALLENGE_ALREADY_SUBMITTED')
-            c.execute('INSERT INTO claims VALUES (?,?,?,?,0)',(ticket,cid,digest,expiry));c.commit()
+        # Ledger reservation must complete BEFORE any GitHub dispatch.
+        # Inconclusive network response fails closed. No retry with a new ticket.
+        if not self.ledger.reserve(ticket,cid,digest,expiry):
+            raise ValueError('LEDGER_RESERVATION_REFUSED')
         self.dispatch(payload)
         return {'schema':'arda.r13.relay_submission.v1','accepted':True,'ticket':ticket,'receipt_expires_at':expiry,'phase4_authorized':False}
     def claim(self,ticket,digest):
         if not isinstance(ticket,str) or len(ticket)!=48 or any(x not in '0123456789abcdef' for x in ticket):return False
         if not isinstance(digest,str) or len(digest)!=64 or any(x not in '0123456789abcdef' for x in digest):return False
-        with sqlite3.connect(self.db,timeout=10,isolation_level=None) as c:
-            c.execute('PRAGMA synchronous=FULL');c.execute('BEGIN IMMEDIATE')
-            changed=c.execute('UPDATE claims SET used=1 WHERE ticket=? AND envelope_sha256=? AND used=0 AND expires_at>?',(ticket,digest,int(self.clock()))).rowcount
-            c.commit()
-        return changed==1
+        return self.ledger.claim(ticket,digest)
     def _dispatch(self,payload):
         request=urllib.request.Request('https://api.github.com/repos/'+self.cfg['ARDA_RELAY_GITHUB_REPO']+'/dispatches',data=canonical(payload),headers={'Authorization':'Bearer '+self.cfg['ARDA_RELAY_GITHUB_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json','User-Agent':'arda-r13-relay/1'},method='POST')
         with urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect()).open(request,timeout=8) as response:
@@ -114,13 +129,14 @@ class Handler(BaseHTTPRequestHandler):
             accepted=self.relay.claim(req['ticket'],req['envelope_sha256'])
             return self.reply(200 if accepted else 409,{'claimed':accepted})
         except (ValueError,KeyError,TypeError,json.JSONDecodeError):return self.reply(400,{'error':'INVALID_REQUEST'})
-        except (urllib.error.URLError,RuntimeError,OSError,sqlite3.Error):return self.reply(503,{'error':'RELAY_UNAVAILABLE'})
+        except (urllib.error.URLError,RuntimeError,OSError):return self.reply(503,{'error':'RELAY_UNAVAILABLE'})
 
 def main():
     if os.environ.get('ARDA_RELAY_STANDBY_ONLY') == '1':
         Handler.relay=None
     else:
-        cfg,pub,db=require_config()
-        Handler.relay=Relay(cfg,pub,db)
+        cfg,pub=require_config()
+        ledger=DurableLedger(cfg['ARDA_RELAY_LEDGER_URL'],cfg['ARDA_RELAY_LEDGER_TOKEN'])
+        Handler.relay=Relay(cfg,pub,ledger)
     ThreadingHTTPServer(('0.0.0.0',7860),Handler).serve_forever()
 if __name__=='__main__':main()
