@@ -267,6 +267,27 @@ class Relay:
     def __init__(self,cfg,pub,ledger,dispatch=None,clock=time.time):
         self.cfg,self.pub,self.ledger,self.clock=cfg,pub,ledger,clock
         self.dispatch=dispatch or self._dispatch
+    def probe_github_dispatch_permission(self):
+        """Safe GitHub API GET; no repository_dispatch and no challenge is spent."""
+        request=urllib.request.Request(
+            'https://api.github.com/repos/'+self.cfg['ARDA_RELAY_GITHUB_REPO'],
+            headers={'Authorization':'Bearer '+self.cfg['ARDA_RELAY_GITHUB_TOKEN'],
+                     'Accept':'application/vnd.github+json',
+                     'User-Agent':'arda-r13-relay-permission-probe/1'},
+            method='GET')
+        try:
+            opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
+            with opener.open(request,timeout=8) as response:
+                doc=json.loads(response.read(8192))
+                permission=doc.get('permissions',{}) if isinstance(doc,dict) else {}
+                push=permission.get('push') if isinstance(permission,dict) else None
+                return {'probe':'GITHUB_REPO_HTTP','http':response.status,
+                        'push':push if type(push) is bool else None}
+        except urllib.error.HTTPError as exc:
+            with exc: pass
+            return {'probe':'GITHUB_REPO_HTTP','http':exc.code,'push':None}
+        except (urllib.error.URLError,TimeoutError,OSError,ValueError):
+            return {'probe':'GITHUB_REPO_TRANSPORT_FAILURE'}
     def submit_v6_synthetic(self,raw):
         """Dispatch encrypted synthetic capture to GitHub; GitHub owns reserve+claim.
 
@@ -352,6 +373,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(200,self.relay.ledger.probe_connection_phases())
                 if raw==b'{"mode":"tls-differential"}':
                     return self.reply(200,self.relay.ledger.probe_tls_differential())
+                if raw==b'{"mode":"github-permission"}':
+                    return self.reply(200,self.relay.probe_github_dispatch_permission())
                 return self.reply(400,{'error':'INVALID_PROBE'})
             if route=='/v1/test-submit':
                 if not synthetic_capture(raw):return self.reply(400,{'error':'SYNTHETIC_CAPTURE_REQUIRED'})
