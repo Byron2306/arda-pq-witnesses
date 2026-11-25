@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/arda-r13-encrypted-relay-v4.yml"
       - "providers/hf/r13-relay/**"
+      - "cloudflare/r13-relay-ledger/**"
       - "tools/r13_offhost_gate/**"
   repository_dispatch:
     types: [arda_r13_capture_v4]
@@ -22,6 +23,8 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+      - name: Exercise Cloudflare Durable Object ledger contract (simulated SQL)
+        run: node --test cloudflare/r13-relay-ledger/src/worker.test.mjs
       - name: Prepare dependency and test
         run: |
           python3 -m venv "$RUNNER_TEMP/venv"
