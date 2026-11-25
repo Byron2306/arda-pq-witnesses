@@ -146,3 +146,78 @@ class TestProbe(unittest.TestCase):
         self.assertIn('tcp_ms',value['routes'][0])
         self.assertIn('tls_ms',value['routes'][0])
         self.assertNotIn('hidden tls detail',repr(value))
+
+    def test_tls_differential_caps_addresses_and_attempts(self):
+        class FakeSocket:
+            def settimeout(self,n):pass
+            def connect(self,address):self.address=address
+            def close(self):pass
+        class FakeTLS:
+            def __enter__(self):return self
+            def __exit__(self,*args):return False
+        class FakeContext:
+            minimum_version=None
+            maximum_version=None
+            def wrap_socket(self,conn,server_hostname):
+                self.hostname=server_hostname
+                return FakeTLS()
+        ledger=DurableLedger('https://private-ledger.example','SECRET_TOKEN')
+        addresses=[(socket.AF_INET,socket.SOCK_STREAM,6,'',(f'192.0.2.{i}',443)) for i in (1,1,2,3)]
+        with patch('gateway.socket.getaddrinfo',return_value=addresses),patch('gateway.socket.socket',side_effect=lambda *a:FakeSocket()),patch('gateway.ssl.create_default_context',side_effect=lambda:FakeContext()):
+            data=ledger.probe_tls_differential()
+        self.assertEqual(data['probe'],'TLS_DIFFERENTIAL_RESULTS')
+        self.assertEqual(data['targets'],2)
+        self.assertEqual(len(data['attempts']),8)
+        self.assertEqual({i['tls_version'] for i in data['attempts']},{'TLS1_2','TLS1_3'})
+        self.assertEqual({i['status'] for i in data['attempts']},{'PASS'})
+        self.assertNotIn('192.0.2',repr(data))
+        self.assertNotIn('private-ledger.example',repr(data))
+        self.assertNotIn('SECRET_TOKEN',repr(data))
+    def test_tls_differential_classifies_timeout_and_redacts(self):
+        class TimeoutSocket:
+            def settimeout(self,n):pass
+            def connect(self,address):raise socket.timeout('INTERNAL_CONNECTION_DETAIL')
+            def close(self):pass
+        ledger=DurableLedger('https://private-ledger.example','SECRET_TOKEN')
+        addresses=[(socket.AF_INET,socket.SOCK_STREAM,6,'',('192.0.2.1',443))]
+        with patch('gateway.socket.getaddrinfo',return_value=addresses),patch('gateway.socket.socket',return_value=TimeoutSocket()):
+            data=ledger.probe_tls_differential()
+        self.assertEqual(len(data['attempts']),4)
+        self.assertTrue(all(i['phase']=='TCP' and i['status']=='TIMEOUT' for i in data['attempts']))
+        self.assertNotIn('INTERNAL_CONNECTION_DETAIL',repr(data))
+    def test_tls_differential_route_is_gated_by_bearer(self):
+        class R:
+            cfg={'ARDA_RELAY_INGEST_TOKEN':'a'*64}
+        h=object.__new__(Handler);h.path='/v1/test-ledger-probe';h.test_until=9999999999;h.relay=R()
+        h.headers={'Authorization':'','Content-Type':'application/json'}
+        answers=[];h.reply=lambda code,body:answers.append((code,body))
+        with patch('gateway.active',return_value=True):h.do_POST()
+        self.assertEqual(answers[0][0],401)
+    def test_tls_differential_route_requires_active_test_window(self):
+        class L:
+            def probe_tls_differential(self):raise AssertionError('should not be invoked')
+        class R:
+            cfg={'ARDA_RELAY_INGEST_TOKEN':'a'*64}
+            ledger=L()
+        h=object.__new__(Handler);h.path='/v1/test-ledger-probe';h.test_until=9999999999;h.relay=R()
+        h.headers={'Authorization':'Bearer '+('a'*64),'Content-Type':'application/json','Content-Length':'27'}
+        h.rfile=io.BytesIO(b'{"mode":"tls-differential"}')
+        answers=[];h.reply=lambda code,body:answers.append((code,body))
+        with patch('gateway.active',return_value=False):h.do_POST()
+        self.assertEqual(answers[0][0],503)
+    def test_tls_differential_dispatches_no_other_operation(self):
+        class L:
+            def probe_tls_differential(self):return {'probe':'TLS_DIFFERENTIAL_RESULTS','targets':0,'attempts':[]}
+            def reserve(self,*args):raise AssertionError('reserve forbidden')
+            def claim(self,*args):raise AssertionError('claim forbidden')
+        class R:
+            cfg={'ARDA_RELAY_INGEST_TOKEN':'a'*64}
+            ledger=L()
+        h=object.__new__(Handler);h.path='/v1/test-ledger-probe';h.test_until=9999999999;h.relay=R()
+        body=b'{"mode":"tls-differential"}'
+        h.headers={'Authorization':'Bearer '+('a'*64),'Content-Type':'application/json','Content-Length':str(len(body))}
+        h.rfile=io.BytesIO(body)
+        answers=[];h.reply=lambda code,body:answers.append((code,body))
+        with patch('gateway.active',return_value=True):h.do_POST()
+        self.assertEqual(answers[0][0],200)
+        self.assertEqual(answers[0][1]['probe'],'TLS_DIFFERENTIAL_RESULTS')
