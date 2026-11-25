@@ -3,19 +3,22 @@ import assert from 'node:assert/strict';
 import worker,{R13RelayLedger} from './worker.mjs';
 
 class TestSQL {
-  constructor(){this.byTicket=new Map();this.challengeIds=new Set()}
+  constructor(){this.byTicket=new Map();this.challengeIds=new Set();this.lastChanges=0}
   exec(query,...args){
     if(query.startsWith('CREATE TABLE'))return {rowsWritten:0};
+    if(query==='SELECT changes() AS changed')return {one:()=>({changed:this.lastChanges})};
     if(query.startsWith('INSERT OR IGNORE')){
       const [ticket,cid,digest,expiry]=args;
-      if(this.challengeIds.has(cid)||this.byTicket.has(ticket))return {rowsWritten:0};
+      if(this.challengeIds.has(cid)||this.byTicket.has(ticket)){this.lastChanges=0;return {rowsWritten:0};}
       this.byTicket.set(ticket,{cid,digest,expiry,used:false});this.challengeIds.add(cid);
-      return {rowsWritten:1};
+      this.lastChanges=1;
+      // Cloudflare counts writes to the primary key and UNIQUE indexes separately.
+      return {rowsWritten:3};
     }
     if(query.startsWith('UPDATE claims')){
       const [ticket,digest,now]=args;const row=this.byTicket.get(ticket);
-      if(!row||row.digest!==digest||row.used||row.expiry<=now)return {rowsWritten:0};
-      row.used=true;return {rowsWritten:1};
+      if(!row||row.digest!==digest||row.used||row.expiry<=now){this.lastChanges=0;return {rowsWritten:0};}
+      row.used=true;this.lastChanges=1;return {rowsWritten:2};
     }
     throw new Error('UNKNOWN_SQL');
   }
