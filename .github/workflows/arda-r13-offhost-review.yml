@@ -1,0 +1,31 @@
+name: ARDA R13 off-host review gate (non-authoritative)
+run-name: R13 off-host review preflight
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: arda-r13-offhost-review
+  cancel-in-progress: false
+jobs:
+  test_and_refuse:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify offline guard tests
+        run: python3 -m unittest discover -s tools/r13_offhost_gate -p 'test_*.py' -v
+      - name: Produce non-authoritative receipt
+        run: |
+          mkdir -p "$RUNNER_TEMP/arda-r13-review"
+          python3 tools/r13_offhost_gate/gate.py --output "$RUNNER_TEMP/arda-r13-review/result.json"
+          cat "$RUNNER_TEMP/arda-r13-review/result.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Store gate receipt without host evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: arda-r13-offhost-review-refusal
+          path: ${{ runner.temp }}/arda-r13-review/result.json
+          if-no-files-found: error
+          retention-days: 7
