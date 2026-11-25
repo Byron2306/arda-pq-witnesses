@@ -97,6 +97,31 @@ class DurableLedger:
             return {'probe':'LEDGER_TRANSPORT_FAILURE','category':'TIMEOUT'}
         except OSError:
             return {'probe':'LEDGER_TRANSPORT_FAILURE','category':'NETWORK'}
+    def probe_environment_egress(self):
+        """Unauthenticated comparison using environment proxy handling.
+        No ledger token, payload, reservation, claim or proxy URL is exposed.
+        """
+        request=urllib.request.Request(self.url+'/claim',data=b'{}',method='POST',
+            headers={'Content-Type':'application/json','User-Agent':'arda-r13-egress-diagnostic/1'})
+        opener=urllib.request.build_opener(NoRedirect())
+        try:
+            with opener.open(request,timeout=5) as response:
+                return {'probe':'ENVIRONMENT_ROUTE_HTTP','http':response.status}
+        except urllib.error.HTTPError as exc:
+            with exc: pass
+            # 401 from the worker proves reachability without authenticating.
+            return {'probe':'ENVIRONMENT_ROUTE_HTTP','http':exc.code}
+        except urllib.error.URLError as exc:
+            reason=exc.reason
+            if isinstance(reason,socket.gaierror): category='DNS'
+            elif isinstance(reason,ssl.SSLError): category='TLS'
+            elif isinstance(reason,(TimeoutError,socket.timeout)): category='TIMEOUT'
+            else: category='NETWORK'
+            return {'probe':'ENVIRONMENT_ROUTE_FAILURE','category':category}
+        except (TimeoutError,socket.timeout):
+            return {'probe':'ENVIRONMENT_ROUTE_FAILURE','category':'TIMEOUT'}
+        except OSError:
+            return {'probe':'ENVIRONMENT_ROUTE_FAILURE','category':'NETWORK'}
     def reserve(self,ticket,cid,digest,expiry):
         status,data=self.call('reserve',{'ticket':ticket,'challenge_id':cid,'envelope_sha256':digest,'expires_at':expiry})
         return status==201 and data=={'reserved':True}
@@ -182,8 +207,10 @@ class Handler(BaseHTTPRequestHandler):
             if not 0<length<=cap:return self.reply(413,{'error':'SIZE'})
             raw=self.rfile.read(length)
             if route=='/v1/test-ledger-probe':
-                if raw!=b'{}':return self.reply(400,{'error':'INVALID_PROBE'})
-                return self.reply(200,self.relay.ledger.probe_transport())
+                if raw==b'{}':return self.reply(200,self.relay.ledger.probe_transport())
+                if raw==b'{"mode":"environment"}':
+                    return self.reply(200,self.relay.ledger.probe_environment_egress())
+                return self.reply(400,{'error':'INVALID_PROBE'})
             if route=='/v1/test-submit':
                 if not synthetic_capture(raw):return self.reply(400,{'error':'SYNTHETIC_CAPTURE_REQUIRED'})
                 return self.reply(202,self.relay.submit(raw))
