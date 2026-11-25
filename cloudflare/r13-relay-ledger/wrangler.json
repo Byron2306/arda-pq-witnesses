@@ -1,0 +1,9 @@
+{
+  "name": "arda-r13-relay-ledger",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-11-25",
+  "durable_objects": {
+    "bindings": [{ "name": "RELAY_LEDGER", "class_name": "R13RelayLedger" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["R13RelayLedger"] }]
+}
