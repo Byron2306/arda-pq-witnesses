@@ -8,6 +8,7 @@ import sqlite3
 import time
 import urllib.request
 import urllib.error
+from urllib.parse import urlsplit
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from crypto_box import unb64, seal, canonical, hash_envelope
 
@@ -93,12 +94,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length',str(len(body)))
         self.end_headers();self.wfile.write(body)
     def do_GET(self):
-        if self.path=='/health':self.reply(200,{'status':'standby' if self.relay is None else 'up','ingest_enabled':self.relay is not None,'phase4_authorized':False,'interlock':'KEEP_CLOSED'})
+        if urlsplit(self.path).path=='/health':self.reply(200,{'status':'standby' if self.relay is None else 'up','ingest_enabled':self.relay is not None,'phase4_authorized':False,'interlock':'KEEP_CLOSED'})
         else:self.reply(404,{'error':'NOT_FOUND'})
     def do_POST(self):
-        if self.path not in ('/v1/submit','/v1/claim'):return self.reply(404,{'error':'NOT_FOUND'})
+        if urlsplit(self.path).path not in ('/v1/submit','/v1/claim'):return self.reply(404,{'error':'NOT_FOUND'})
         if self.relay is None:return self.reply(503,{'error':'RELAY_STANDBY','interlock':'KEEP_CLOSED'})
-        key='ARDA_RELAY_INGEST_TOKEN' if self.path=='/v1/submit' else 'ARDA_RELAY_CLAIM_TOKEN'
+        key='ARDA_RELAY_INGEST_TOKEN' if urlsplit(self.path).path=='/v1/submit' else 'ARDA_RELAY_CLAIM_TOKEN'
         bearer=self.headers.get('Authorization','')
         if not hmac.compare_digest(bearer,'Bearer '+self.relay.cfg[key]):return self.reply(401,{'error':'UNAUTHORIZED'})
         cap=MAX_CAPTURE if self.path=='/v1/submit' else 1024
@@ -107,7 +108,7 @@ class Handler(BaseHTTPRequestHandler):
             length=int(self.headers.get('Content-Length','-1'))
             if not 0<length<=cap:return self.reply(413,{'error':'SIZE'})
             raw=self.rfile.read(length)
-            if self.path=='/v1/submit':return self.reply(202,self.relay.submit(raw))
+            if urlsplit(self.path).path=='/v1/submit':return self.reply(202,self.relay.submit(raw))
             req=json.loads(raw)
             if not isinstance(req,dict) or set(req)!={'ticket','envelope_sha256'}:raise ValueError('CLAIM_FIELDS')
             accepted=self.relay.claim(req['ticket'],req['envelope_sha256'])
