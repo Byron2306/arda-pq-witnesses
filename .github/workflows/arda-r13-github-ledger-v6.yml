@@ -46,8 +46,16 @@ jobs:
           except urllib.error.HTTPError as exc:
               with exc:
                   body=exc.read(256)
-              if exc.code != 400 or json.loads(body) != {'claimed':False,'error':'INVALID_CLAIM'}:
+              if exc.code != 400:
+                  # Status only. Never expose upstream body or response headers.
+                  print('LEDGER_UPSTREAM_HTTP='+str(exc.code))
                   raise SystemExit('LEDGER_AUTH_PREFLIGHT=REFUSE_HTTP')
+              try:
+                  payload=json.loads(body)
+              except (ValueError,TypeError):
+                  raise SystemExit('LEDGER_AUTH_PREFLIGHT=REFUSE_BAD_JSON') from None
+              if payload != {'claimed':False,'error':'INVALID_CLAIM'}:
+                  raise SystemExit('LEDGER_AUTH_PREFLIGHT=REFUSE_CONTRACT')
           except (urllib.error.URLError,TimeoutError,OSError,ValueError):
               raise SystemExit('LEDGER_AUTH_PREFLIGHT=REFUSE_TRANSPORT')
           print('GITHUB_TO_CLOUDFLARE_AUTHENTICATED=PASS')
